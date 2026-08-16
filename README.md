@@ -158,3 +158,76 @@ macOS on **Apple Silicon** — Touch ID (the fingerprint gate) and the **Secure 
 
 - **Trademark + domain.** Run a real trademark search and grab a domain/handle (e.g. `sesame.app` / `getsesame.app`). Sesame is not affiliated with any other product of the same name.
 - **Free-MVP technical design.** Write the one-page technical design for the Free MVP (unsigned CLI + `LAContext` gate + login-Keychain storage), then a prototype behind Touch ID.
+
+---
+
+## 13 · Usage (Free MVP — Milestone 1)
+
+The Free MVP is a single **unsigned** SwiftPM command-line tool. macOS 13+, Apple Silicon.
+
+### ⚠️ Security note — the MVP Touch ID gate is advisory, not hardware-enforced
+
+**Read this before you trust the MVP with anything sensitive.** In the Free MVP the Touch ID prompt is raised at the **CLI layer** (`LAContext.evaluatePolicy`) *before* Sesame reads the secret. The secret itself lives in a **plain login-Keychain item** (`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) with **no biometric `SecAccessControl`** — because a biometric/Secure-Enclave access control needs the restricted Keychain entitlement, which a bare CLI cannot have.
+
+The consequence, stated plainly: **the fingerprint is a user-facing courtesy gate, not a cryptographic binding.** Any other process running as you, in a login session, can read that Keychain item directly and never see a Touch ID prompt. Sesame's gate stops *Sesame* from releasing the value without your tap; it does **not** stop a determined same-user program from going around Sesame. Likewise the access log's `requester` is a **best-effort parent-process name** (spoofable by renaming a binary), **not** a verified code signature.
+
+This is the accepted, documented tradeoff for the **$0 tier**. **Milestone 2** (a code-signed daemon + a **Secure-Enclave** key-wrap + a Unix-socket ask-interface with the caller's **verified code signature**) makes the gate cryptographic and closes these gaps. Do not treat the MVP as hardware-bound.
+
+`run`'s env injection is also visible to same-user tooling (`ps -E`, a debugger) while the child runs — no plaintext ever hits disk, but the environment is not hidden. Milestone 2 switches to a FIFO/named-pipe (`op run` model) to remove even that.
+
+### Build & install
+
+```
+swift build -c release
+cp .build/release/sesame /usr/local/bin/sesame   # or anywhere on your PATH
+```
+
+### Commands
+
+Sesame prints **TOON** by default (a compact, agent-friendly shape); every command also takes `--json`. Secret **values never** appear in `--json`, in the log, or in `argv`.
+
+| Command | What it does |
+| --- | --- |
+| `sesame` | No-args dashboard: recent secrets + `summary: total: N` + next-step hints. |
+| `sesame add <NAME>` | Store a secret. **Value is read from STDIN** (never argv, so it can't leak via `ps`). Re-adding an existing name is a safe no-op → `already: true`. |
+| `sesame get <NAME>` | Touch ID → the **bare value on STDOUT only** (for `$(…)`); metadata to STDERR. `--json` omits the value. |
+| `sesame run <NAME…> -- <cmd>` | Touch ID **once per secret** → inject into `<cmd>`'s environment via `execve` → run it (stdout/exit passed through). |
+| `sesame ls [--full]` | List secret names + metadata (never values). Empty: `secrets[0]: (none added yet)`. |
+| `sesame rm <NAME> --confirm` | Delete a secret. **Requires `--confirm` (or `--force`)** — deletion is permanent. |
+| `sesame log [--limit N] [--since T] [--full]` | Show the access log, newest-first. |
+
+Global flags: `--json` (all commands), `--full` (more fields / untruncated), `--help` (per command), `-v` / `--version`.
+
+### Examples
+
+```
+# Store a key — the value comes from stdin, never the command line.
+printf '%s' "$OPENAI_API_KEY" | sesame add OPENAI_API_KEY
+
+# Use it in a subshell (Touch ID prompt appears; bare value on stdout).
+export OPENAI_API_KEY="$(sesame get OPENAI_API_KEY)"
+
+# Run a command with one or more secrets injected (one tap per secret).
+sesame run OPENAI_API_KEY STRIPE_SECRET_KEY -- ./deploy.sh
+
+# See what you have, and the access trail.
+sesame ls
+sesame log --limit 20
+```
+
+### Exit codes
+
+`0` success · `1` runtime failure (Touch ID denied, rate-limited, I/O, Keychain locked) · `2` usage error (secret not found, bad name, missing `--confirm`).
+
+### Storage & log locations
+
+- **Secrets:** login Keychain, service `dev.sesame`, one generic-password item per secret, `ThisDeviceOnly` (never synced to iCloud).
+- **Access log:** JSON-Lines at `~/Library/Application Support/Sesame/access.log` — one record per request `{ts, op, name, requester, result}`, never the value.
+
+### Rate limiting
+
+Repeated reads of the *same* secret are throttled to **5 reads / 60 s** (in-memory, per process). On exceed: `error: rate-limited for <NAME> — try again in <Xs>` (exit 1), logged as `result:"ratelimited"`.
+
+### Testing note
+
+`swift test` runs headlessly: the Touch ID gate is behind an `Authenticator` protocol so unit tests use a **fake** that approves/denies with no prompt, and the Keychain tests use an isolated `dev.sesame.test` service and **skip cleanly** when no login Keychain is available (CI/non-mac). The **real** Touch ID prompt can only be exercised interactively on a Mac — that prove-out is manual.
