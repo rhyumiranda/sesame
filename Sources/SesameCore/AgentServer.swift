@@ -149,6 +149,7 @@ public final class AgentServer {
             if clientFD < 0 {
                 if running { continue } else { break }
             }
+            UnixSocket.suppressSIGPIPE(clientFD)
             connQueue.async { [weak self] in self?.serve(clientFD) }
         }
     }

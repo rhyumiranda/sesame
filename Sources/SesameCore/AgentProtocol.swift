@@ -72,6 +72,25 @@ public enum UnixSocket {
     /// prefix. Secrets are small; 1 MiB is generous.
     public static let maxFrame = 1 << 20
 
+    /// Stop a write to a peer-closed socket from terminating the process with
+    /// SIGPIPE — the universal socket-server idiom. We set SO_NOSIGPIPE per-fd
+    /// AND ignore SIGPIPE process-wide exactly once, because on macOS the per-fd
+    /// option alone does not reliably suppress it for a peer that closed between
+    /// our accept and our write (verified: the write still delivered SIGPIPE).
+    /// A write to a dead peer then simply returns EPIPE, which our IO loops treat
+    /// as end-of-connection.
+    public static func suppressSIGPIPE(_ fd: Int32) {
+        _ = sigpipeIgnoredOnce
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+    }
+
+    /// Lazy statics run under a thread-safe dispatch_once, so SIG_IGN is
+    /// installed at most once regardless of how many sockets we open.
+    private static let sigpipeIgnoredOnce: Void = {
+        signal(SIGPIPE, SIG_IGN)
+    }()
+
     /// Read exactly `count` bytes, looping over partial reads. `nil` on EOF/error.
     public static func readN(_ fd: Int32, _ count: Int) -> Data? {
         var buffer = Data()
@@ -156,6 +175,7 @@ public struct AgentClient: Sendable {
     private func connectFD() throws -> Int32 {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SesameError.agentUnavailable("socket() failed") }
+        UnixSocket.suppressSIGPIPE(fd)
         var addr = try UnixSocket.makeAddr(path: socketPath)
         let len = socklen_t(MemoryLayout<sockaddr_un>.size)
         let rc = withUnsafePointer(to: &addr) { ptr in

@@ -22,7 +22,7 @@ private func makeLog() -> AccessLog { AccessLog() }
 
 /// The advisory login-Keychain store the CLI can always reach on its own — the
 /// Stage-A store and the fail-safe fallback.
-private func advisoryStore() -> KeychainStore { KeychainStore(service: kService) }
+func advisoryStore() -> KeychainStore { KeychainStore(service: kService) }
 
 /// Resolved store + gate for one command invocation.
 struct Wiring {
@@ -33,7 +33,7 @@ struct Wiring {
 }
 
 /// Resolve the store/gate from config, applying the agent-down fail-safe.
-private func resolveWiring(config: Config = .load()) -> Wiring {
+func resolveWiring(config: Config = .load()) -> Wiring {
     if config.dataSource == .agent {
         let client = AgentClient(socketPath: config.agentSocket)
         if client.isAvailable() {
