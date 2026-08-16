@@ -10,16 +10,34 @@ Sesame is a fingerprint-gated vault for the environment secrets your AI agents (
 - **CLI *and* a windowed macOS app** — script it from the terminal, or use the native app (Dock icon + window) for reveal/copy.
 - **Advisory gate today, cryptographic tier available** — an advisory Touch ID gate by default, with a Secure-Enclave–backed cryptographic tier that unlocks behind a signed build (dormant by default).
 
-## Install
+## Getting started
 
-```sh
-swift build                 # build the sesame CLI
-bash scripts/build-app.sh   # build + install the windowed app to ~/Applications/Sesame.app
+Three steps from zero to a Touch-ID-gated agent:
+
+```
+    .--.
+   /    \    S E S A M E
+  |------|
+  | (  ) |   Open sesame — one key, one touch
+  |______|
 ```
 
-## Usage
+```sh
+brew install rhyumiranda/tap/sesame        # 1. install the CLI
+sesame add OPENAI_API_KEY                   # 2. store a secret (value read from stdin, never argv)
+cd your-project && sesame init              # 3. declare the secret NAMES this project needs
+sesame exec -- claude                       #    launch your agent with them present (Touch ID per secret)
+```
 
-### CLI
+`brew` installs the **CLI only** — every onboarding step (`add` / `init` / `exec`) works CLI-only. The windowed **GUI app** and the cryptographic **Secure-Enclave tier** are optional extras built from source:
+
+```sh
+bash scripts/build-app.sh                   # build + install ~/Applications/Sesame.app (GUI + SE tier)
+```
+
+The formula builds from source with the Swift toolchain from the **Command Line Tools** (no full Xcode required). See [`packaging/homebrew/`](packaging/homebrew/) for the formula + release process.
+
+## Usage
 
 ```sh
 printf '%s' "$OPENAI_API_KEY" | sesame add OPENAI_API_KEY   # store (value via stdin, never argv)
@@ -29,12 +47,7 @@ sesame exec -- ./deploy.sh                                  # inject the project
 sesame ls                                                   # list names + metadata (never values)
 sesame rm OPENAI_API_KEY --confirm                          # delete (permanent, needs --confirm)
 sesame log --limit 20                                       # show the access log, newest-first
-```
-
-### Windowed app
-
-```sh
-open ~/Applications/Sesame.app
+sesame setup                                                # (optional) put ~/.sesame/shims on PATH for on-demand shims
 ```
 
 ## Agent env integration
