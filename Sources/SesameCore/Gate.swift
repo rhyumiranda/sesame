@@ -10,7 +10,7 @@ import LocalAuthentication
 /// user-facing courtesy check, NOT a cryptographic binding. A same-user
 /// process could read the login-Keychain item directly, bypassing this gate.
 /// Milestone 2 (Secure Enclave key-wrap in a signed daemon) closes that gap.
-public protocol Authenticator {
+public protocol Authenticator: Sendable {
     /// Raises the gate. Returns normally on approval; throws `SesameError`
     /// (`.denied` / `.authUnavailable`) otherwise.
     func authenticate(reason: String) throws
@@ -18,7 +18,7 @@ public protocol Authenticator {
 
 /// Real Touch ID via LocalAuthentication. Works from an unsigned CLI so long
 /// as it runs inside a logged-in GUI session (see README §9).
-public struct LAAuthenticator: Authenticator {
+public struct LAAuthenticator: Authenticator, Sendable {
     public init() {}
 
     public func authenticate(reason: String) throws {

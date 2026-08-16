@@ -5,7 +5,7 @@ import Darwin
 
 /// One access-log record. Serialized as a single JSON line (JSONL).
 /// NEVER contains the secret value.
-public struct LogEntry {
+public struct LogEntry: Sendable {
     public var ts: String
     public var op: String        // add | get | run | rm
     public var name: String
@@ -36,7 +36,7 @@ public struct LogEntry {
 ///
 /// Default location: `~/Library/Application Support/Sesame/access.log`.
 /// Tests inject a temp URL so they never touch the user's real log.
-public struct AccessLog {
+public struct AccessLog: Sendable {
     public let url: URL
 
     public init(url: URL = AccessLog.defaultURL()) {
