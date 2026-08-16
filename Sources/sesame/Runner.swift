@@ -1,4 +1,5 @@
 import Foundation
+import SesameCore
 #if canImport(Darwin)
 import Darwin
 #endif

@@ -1,6 +1,26 @@
 import XCTest
 import Foundation
+import SesameCore
 @testable import sesame
+
+/// Test double: approves or denies deterministically, records reasons, never
+/// touches the biometric hardware. Lives in the test target (never shipped in
+/// the public SesameCore library).
+final class FakeAuthenticator: Authenticator {
+    let approve: Bool
+    private(set) var prompts: [String] = []
+
+    init(approve: Bool) {
+        self.approve = approve
+    }
+
+    func authenticate(reason: String) throws {
+        prompts.append(reason)
+        if !approve {
+            throw SesameError.denied("fake denial")
+        }
+    }
+}
 
 /// Keychain-backed tests run against the LOCAL login Keychain using an isolated
 /// test service. They SKIP cleanly (via `throw XCTSkip`) when no login Keychain

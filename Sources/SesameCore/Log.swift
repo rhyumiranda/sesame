@@ -5,15 +5,23 @@ import Darwin
 
 /// One access-log record. Serialized as a single JSON line (JSONL).
 /// NEVER contains the secret value.
-struct LogEntry {
-    var ts: String
-    var op: String        // add | get | run | rm
-    var name: String
-    var requester: String? // best-effort parent process name (NOT verified)
-    var result: String    // ok | denied | ratelimited | notfound | error
+public struct LogEntry {
+    public var ts: String
+    public var op: String        // add | get | run | rm
+    public var name: String
+    public var requester: String? // best-effort parent process name (NOT verified)
+    public var result: String    // ok | denied | ratelimited | notfound | error
+
+    public init(ts: String, op: String, name: String, requester: String?, result: String) {
+        self.ts = ts
+        self.op = op
+        self.name = name
+        self.requester = requester
+        self.result = result
+    }
 
     /// Ordered dictionary form for JSON (exact field set per the plan).
-    func asDictionary() -> [String: Any] {
+    public func asDictionary() -> [String: Any] {
         [
             "ts": ts,
             "op": op,
@@ -28,21 +36,21 @@ struct LogEntry {
 ///
 /// Default location: `~/Library/Application Support/Sesame/access.log`.
 /// Tests inject a temp URL so they never touch the user's real log.
-struct AccessLog {
-    let url: URL
+public struct AccessLog {
+    public let url: URL
 
-    init(url: URL = AccessLog.defaultURL()) {
+    public init(url: URL = AccessLog.defaultURL()) {
         self.url = url
     }
 
-    static func defaultURL() -> URL {
+    public static func defaultURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Sesame/access.log")
     }
 
     /// Append one entry. Best-effort: logging failure must never break a command.
-    func append(_ entry: LogEntry) {
+    public func append(_ entry: LogEntry) {
         let dir = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -65,7 +73,7 @@ struct AccessLog {
 
     /// Read entries newest-first, up to `limit`. Returns raw dictionaries so the
     /// output layer can render TOON or JSON identically.
-    func read(limit: Int? = nil) -> [[String: Any]] {
+    public func read(limit: Int? = nil) -> [[String: Any]] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         var entries: [[String: Any]] = []
         for rawLine in text.split(separator: "\n") {
@@ -88,8 +96,8 @@ struct AccessLog {
 /// This is the `requester` in the access log. It is a COURTESY label only —
 /// NOT a verified code signature. A caller can trivially spoof it by renaming
 /// its binary. Verified caller signatures are Milestone 2.
-enum Requester {
-    static func parentName() -> String? {
+public enum Requester {
+    public static func parentName() -> String? {
         #if canImport(Darwin)
         let ppid = getppid()
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, ppid]

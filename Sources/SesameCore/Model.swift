@@ -7,7 +7,7 @@ import Foundation
 //   1  runtime failure  (Touch ID denied, I/O, rate-limited, Keychain locked)
 //   2  usage error      (secret not found, bad name, missing --confirm)
 
-enum SesameError: Error {
+public enum SesameError: Error {
     case notFound(String)                 // exit 2
     case badName(String)                  // exit 2
     case missingConfirm                   // exit 2
@@ -18,7 +18,7 @@ enum SesameError: Error {
     case io(String)                       // exit 1
     case authUnavailable(String)          // exit 1
 
-    var exitCode: Int32 {
+    public var exitCode: Int32 {
         switch self {
         case .notFound, .badName, .missingConfirm:
             return 2
@@ -28,7 +28,7 @@ enum SesameError: Error {
     }
 
     /// Structured, actionable message — names the problem and the remedy command.
-    var message: String {
+    public var message: String {
         switch self {
         case .notFound(let name):
             return "\(name) not found — 'sesame add \(name)' to create it"
@@ -52,7 +52,7 @@ enum SesameError: Error {
     }
 
     /// The `result` token recorded in the access log for this failure.
-    var logResult: String {
+    public var logResult: String {
         switch self {
         case .notFound: return "notfound"
         case .denied: return "denied"
@@ -64,9 +64,9 @@ enum SesameError: Error {
 
 // MARK: - Name validation
 
-enum Name {
+public enum Name {
     /// Env-var-shaped: leading letter/underscore, then letters/digits/underscores.
-    static func validate(_ name: String) throws {
+    public static func validate(_ name: String) throws {
         let pattern = "^[A-Za-z_][A-Za-z0-9_]*$"
         guard name.range(of: pattern, options: .regularExpression) != nil else {
             throw SesameError.badName(name)
@@ -76,14 +76,14 @@ enum Name {
 
 // MARK: - Time
 
-enum Time {
+public enum Time {
     private static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
 
-    static func iso(_ date: Date = Date()) -> String {
+    public static func iso(_ date: Date = Date()) -> String {
         formatter.string(from: date)
     }
 }
@@ -93,21 +93,21 @@ enum Time {
 // TOON is the default, token-efficient shape for agents; `--json` is available
 // on every command. Secret VALUES never appear in either — only metadata.
 
-enum Out {
-    static func line(_ s: String) {
+public enum Out {
+    public static func line(_ s: String) {
         FileHandle.standardOutput.write(Data((s + "\n").utf8))
     }
 
-    static func err(_ s: String) {
+    public static func err(_ s: String) {
         FileHandle.standardError.write(Data((s + "\n").utf8))
     }
 
     /// Bare value with NO trailing newline — so `$(sesame get X)` captures it exactly.
-    static func bareValue(_ s: String) {
+    public static func bareValue(_ s: String) {
         FileHandle.standardOutput.write(Data(s.utf8))
     }
 
-    static func json(_ object: Any) -> String {
+    public static func json(_ object: Any) -> String {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
               let s = String(data: data, encoding: .utf8) else {
@@ -117,7 +117,7 @@ enum Out {
     }
 
     /// Print a structured error to stderr in the requested shape, then exit.
-    static func failAndExit(_ error: SesameError, json: Bool) -> Never {
+    public static func failAndExit(_ error: SesameError, json: Bool) -> Never {
         if json {
             err(Out.json(["ok": false, "error": error.message, "code": Int(error.exitCode)]))
         } else {

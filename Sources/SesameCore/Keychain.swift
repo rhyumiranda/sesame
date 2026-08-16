@@ -4,17 +4,29 @@ import Security
 /// Metadata we track per secret beyond the value + creation date.
 /// Stored as a small JSON blob in the item's `kSecAttrComment` field
 /// (never contains the value).
-struct Usage: Codable {
-    var lastUsedAt: String?
-    var lastUsedBy: String?
+public struct Usage: Codable {
+    public var lastUsedAt: String?
+    public var lastUsedBy: String?
+
+    public init(lastUsedAt: String?, lastUsedBy: String?) {
+        self.lastUsedAt = lastUsedAt
+        self.lastUsedBy = lastUsedBy
+    }
 }
 
 /// A secret's metadata as surfaced to `ls` / the dashboard — NEVER the value.
-struct SecretInfo {
-    var name: String
-    var createdAt: String
-    var lastUsedAt: String?
-    var lastUsedBy: String?
+public struct SecretInfo {
+    public var name: String
+    public var createdAt: String
+    public var lastUsedAt: String?
+    public var lastUsedBy: String?
+
+    public init(name: String, createdAt: String, lastUsedAt: String?, lastUsedBy: String?) {
+        self.name = name
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.lastUsedBy = lastUsedBy
+    }
 }
 
 /// Login-Keychain storage for Sesame secrets.
@@ -26,10 +38,10 @@ struct SecretInfo {
 /// (see `Gate.swift`). Any same-user process with a login session can read
 /// these items directly. This is the accepted $0-tier tradeoff; Milestone 2
 /// (signed daemon + Secure-Enclave key-wrap) makes the gate cryptographic.
-struct KeychainStore {
-    let service: String
+public struct KeychainStore {
+    public let service: String
 
-    init(service: String = "dev.sesame") {
+    public init(service: String = "dev.sesame") {
         self.service = service
     }
 
@@ -45,7 +57,7 @@ struct KeychainStore {
     }
 
     /// True if an item with this name already exists (no value read).
-    func exists(_ name: String) throws -> Bool {
+    public func exists(_ name: String) throws -> Bool {
         var q = baseQuery(account: name)
         q[kSecReturnAttributes as String] = false
         q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -61,7 +73,7 @@ struct KeychainStore {
     /// overwrite); otherwise stores the value and returns `true`.
     /// CopyMatching-first per the pinned spec.
     @discardableResult
-    func add(name: String, value: Data) throws -> Bool {
+    public func add(name: String, value: Data) throws -> Bool {
         if try exists(name) { return false } // already: true
 
         var attrs = baseQuery(account: name)
@@ -81,7 +93,7 @@ struct KeychainStore {
 
     /// Reads the raw secret value. This is the ONLY method that returns the
     /// value; callers must have passed the CLI-layer Touch ID gate first.
-    func copyValue(name: String) throws -> Data {
+    public func copyValue(name: String) throws -> Data {
         var q = baseQuery(account: name)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -92,14 +104,14 @@ struct KeychainStore {
         return data
     }
 
-    func delete(name: String) throws {
+    public func delete(name: String) throws {
         let status = SecItemDelete(baseQuery(account: name) as CFDictionary)
         guard status == errSecSuccess else { throw mapStatus(status, name: name) }
     }
 
     /// All secrets' metadata (names + dates + last-use), never values.
     /// Sorted by name for a stable field order.
-    func list() throws -> [SecretInfo] {
+    public func list() throws -> [SecretInfo] {
         var q = baseQuery()
         q[kSecReturnAttributes as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitAll
@@ -123,7 +135,7 @@ struct KeychainStore {
     }
 
     /// Record a successful release: stamp lastUsedAt/lastUsedBy on the item.
-    func recordUse(name: String, by requester: String?) {
+    public func recordUse(name: String, by requester: String?) {
         let usage = Usage(lastUsedAt: Time.iso(), lastUsedBy: requester)
         guard let comment = encodeUsage(usage) else { return }
         let attrs: [String: Any] = [kSecAttrComment as String: comment]
