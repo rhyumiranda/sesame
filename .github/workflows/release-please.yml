@@ -1,0 +1,49 @@
+name: release-please
+
+# Automatic releases from conventional commits. On each push to main, this keeps
+# a "release PR" open that bumps the version (via the x-release-please-version
+# markers in scripts/build-app.sh and Sources/sesame/main.swift) and writes
+# CHANGELOG.md. That release PR is then auto-merged, which tags + publishes the
+# GitHub Release — no manual version bump, tag, push, or merge.
+#
+# Fully hands-off requires a Personal Access Token in the RELEASE_PLEASE_TOKEN
+# secret (fine-grained: this repo, Contents=RW + Pull requests=RW). With it:
+#   - the release PR is authored by YOU, not github-actions[bot], so its CI does
+#     NOT hit the "workflow awaiting approval" gate; and
+#   - merging it pushes to main under the PAT, which re-triggers this workflow so
+#     the release actually gets tagged (a GITHUB_TOKEN push never re-triggers CI).
+# Without the secret it falls back to github.token and the auto-merge step is
+# skipped, so behavior is exactly as before (manual approve + merge) — no breakage.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # create the release + tag
+  pull-requests: write   # open/update the release PR
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    env:
+      # Mapped to env so it can be referenced in step `if:` (the `secrets` context
+      # is not allowed directly in `if`). Empty when the PAT isn't configured.
+      RP_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # Turn on GitHub auto-merge for the open release PR. It merges itself once CI
+      # is green. Only runs when a release PR exists AND the PAT is configured (so
+      # the merge re-triggers this workflow and the release is tagged).
+      - name: Enable auto-merge on the release PR
+        if: ${{ steps.release.outputs.pr && env.RP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh pr merge --auto --squash "${{ fromJson(steps.release.outputs.pr).number }}"
