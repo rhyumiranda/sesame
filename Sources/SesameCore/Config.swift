@@ -78,3 +78,18 @@ public struct Config: Codable, Equatable, Sendable {
         return (path as NSString).expandingTildeInPath
     }
 }
+
+/// Builds the LOCAL storage backend a config selects. Shared by the app (which
+/// the agent serves from) and the CLI's local/fallback path, so both agree on
+/// where secrets live. The advisory service name stays `dev.sesame` (the Stage-A
+/// items the Milestone-1 CLI already uses).
+public enum StoreFactory {
+    public static func local(_ config: Config) -> StorageBackend {
+        switch config.storageBackend {
+        case .secureEnclave:
+            return SecureEnclaveStore(provider: RealEnclaveProvider())
+        case .advisory:
+            return KeychainStore(service: "dev.sesame")
+        }
+    }
+}

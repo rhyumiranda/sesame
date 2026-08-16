@@ -6,6 +6,7 @@ import SesameCore
 /// and Quit. The auto-start toggle lives in `LoginItemSection`.
 struct PopoverView: View {
     @EnvironmentObject var model: SecretsViewModel
+    @EnvironmentObject var agent: AgentService
     @State private var newName = ""
     @State private var newValue = ""
     @State private var showAdd = false
@@ -40,7 +41,10 @@ struct PopoverView: View {
                     Circle().fill(.green).frame(width: 7, height: 7)
                     Text("Sesame is running").font(.caption).foregroundStyle(.secondary)
                 }
-            }
+                Text(agent.statusText)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+}
             Spacer()
         }
     }

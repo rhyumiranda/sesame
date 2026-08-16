@@ -9,7 +9,18 @@ import SwiftUI
 /// required for `MenuBarExtra` and for `SMAppService` login-item discovery).
 @main
 struct SesameStatusBarApp: App {
-    @StateObject private var model = SecretsViewModel()
+    @StateObject private var agent: AgentService
+    @StateObject private var model: SecretsViewModel
+
+    init() {
+        // Resolve the config-selected store ONCE and share it between the agent
+        // (which serves the CLI) and the popover (which lists/adds/removes), so
+        // the UI never drifts from what the agent hands out.
+        let agent = AgentService()
+        _agent = StateObject(wrappedValue: agent)
+        _model = StateObject(wrappedValue: SecretsViewModel(store: agent.store))
+        agent.start()
+    }
 
     var body: some Scene {
         // `.window` style hosts arbitrary SwiftUI (text fields, toggles) in the
@@ -17,6 +28,7 @@ struct SesameStatusBarApp: App {
         MenuBarExtra("Sesame", systemImage: "lock.open") {
             PopoverView()
                 .environmentObject(model)
+                .environmentObject(agent)
         }
         .menuBarExtraStyle(.window)
     }

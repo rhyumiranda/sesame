@@ -14,14 +14,14 @@ final class SecretsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var statusMessage: String?
 
-    private let store: KeychainStore
+    private let store: StorageBackend
     private let auth: Authenticator
     private let log: AccessLog
 
     /// Label recorded as the log `requester` for app-originated actions.
     private let requester = "Sesame.app"
 
-    init(store: KeychainStore = KeychainStore(service: "dev.sesame"),
+    init(store: StorageBackend = KeychainStore(service: "dev.sesame"),
          auth: Authenticator = LAAuthenticator(),
          log: AccessLog = AccessLog()) {
         self.store = store
