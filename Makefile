@@ -10,7 +10,8 @@ build:
 release:
 	swift build -c release
 
-# Run the unit suite (the 20 CLI/core tests).
+# Run the unit suite (CLI/core + Stage-B Secure-Enclave/agent/client tests;
+# the real-Enclave test skips cleanly without a signed+entitled build).
 test:
 	swift test
 

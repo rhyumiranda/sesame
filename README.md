@@ -277,3 +277,88 @@ Listing secret **names needs no Touch ID** (names are not values). Touch ID (via
 - Clicking **Allow** on the macOS Login Items approval prompt.
 - The manual UI + Touch ID prove-out above.
 - (Not needed for Stage A — a proper Developer-ID signing team is a Stage B concern.)
+
+---
+
+## 15 · Milestone 2 · Stage B — Secure-Enclave gate + agent socket + CLI-as-client
+
+Stage B turns the **advisory** gate into a **cryptographic** one and makes the signed menu-bar app the **agent** the `sesame` CLI talks to (the [Secretive](https://github.com/maxgoedjen/secretive) model). Each secret is now **ECIES-wrapped to a Secure-Enclave key** whose private half never leaves the chip and only decrypts after Touch ID — reading the stored blob directly yields ciphertext. **Defaults are unchanged**: a fresh install still behaves exactly like Stage A until you produce a signed build and flip the backend, so nothing regresses.
+
+### Architecture
+
+- The **signed app is the agent**: it owns the SE key, raises Touch ID, and listens on a Unix-domain socket in your login session (Touch ID only works there).
+- The **`sesame` CLI is a thin client**: `get`/`run`/`add`/`ls`/`rm` route to the agent over the socket; the agent SE-decrypts behind Touch ID and returns the value, which the CLI injects via `execve` exactly as before. If the agent is down, the CLI **fails safe** to the Stage-A advisory local path — never crashes.
+
+### Configuration (`~/Library/Application Support/Sesame/config.json`)
+
+| Key | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `storage_backend` | `advisory` \| `secure-enclave` | `advisory` | Where secrets live. `advisory` = Stage-A login-Keychain; `secure-enclave` = the cryptographic file vault. |
+| `data_source` | `agent` \| `local` | `agent` | How the CLI reaches the store. `agent` routes through the socket **and fails safe to advisory-local when no agent is running** — so the default = Stage-A behavior. |
+| `agent_socket` | path | `…/Sesame/agent.sock` | The agent's listen/connect socket. |
+
+**To go cryptographic:** produce a signed build (below), set `storage_backend` to `secure-enclave`, relaunch the app, then `sesame migrate`.
+
+### The Secure-Enclave key (pinned choices)
+
+- **Key:** a per-vault EC key created with `SecKeyCreateRandomKey` on `kSecAttrTokenIDSecureEnclave`, with a biometric `SecAccessControl` of `.privateKeyUsage` + **`.biometryAny`**. `.biometryAny` (not `.biometryCurrentSet`) is deliberate — this is a *vault*, so **durability beats strictness**: `.biometryCurrentSet` would invalidate the key (and destroy every secret) whenever you add or remove a fingerprint. `.biometryAny` survives enrollment changes, still requires an enrolled fingerprint, and stays device-bound + non-exportable.
+- **No `keychain-access-groups` entitlement.** The SE key is a keychain token item under the app's **own** default access group; a signed app reaches its own items with no special (paid/restricted) entitlement. This is why Secretive needs none either.
+- **Blob = file, not keychain.** Each wrapped secret is a file `~/Library/Application Support/Sesame/vault/<name>.bin` (`0600`, dir `0700`), with a `<name>.meta` sidecar for timestamps (never the value). Storing ciphertext as a file avoids the keychain-entitlement path entirely.
+
+### Recovery — SE keys can't be backed up
+
+An SE key is per-device and non-exportable: an **OS reinstall / device loss / Enclave reset means the SE-wrapped secrets are gone** (`.biometryAny` prevents loss on fingerprint changes, but not on device loss). So **SE-backed secrets live only on this Mac** — there is no hidden second copy (that would defeat the gate). Your backup story is explicit and user-controlled:
+
+| Command | What it does |
+| --- | --- |
+| `sesame migrate` | Re-wrap each advisory (Stage-A) secret into the SE vault (Touch ID per secret). On any failure the advisory copy is **left intact**; drop old copies afterward with `sesame rm <NAME> --advisory --confirm`. No silent auto-migrate. |
+| `sesame export` | Dump every secret as `NAME=value` on STDOUT (Touch ID per secret) — a backup **you** store and protect. `sesame export > vault.env` then guard that file. |
+| `sesame import` | Restore `NAME=value` lines from STDIN into a fresh vault (`sesame import < vault.env`). Idempotent — an existing name is skipped. |
+
+### Agent socket protocol
+
+- **Framing:** a **uint32 big-endian length prefix**, then a **JSON** object. One request, one response, per connection.
+- **Request:** `{op, name?, value?, requester?}` where `op` ∈ `get` \| `list` \| `add` \| `delete`. **Response:** `{ok, value?, error?, secrets?, requesterSignature?}`.
+- **Serialized Touch ID:** the agent raises **one prompt at a time**; concurrent `get`s queue, each with a **60 s timeout** → `{ok:false,error:"timeout"}`.
+
+### Peer verification + the OPEN policy
+
+Access policy is **OPEN** — any same-user process may connect and ask; the **fingerprint is the gate**, not an allow-list. To keep that safe, the agent reads the connecting peer's PID (`LOCAL_PEERPID`) and derives its **verified code signature** (`SecCodeCopyGuestWithAttributes` by pid → `SecCodeCopySigningInformation`), then **shows it in the Touch ID prompt and logs it**:
+
+- **signed** → the verified code-signing identifier (an impostor can't fake being `claude-code`).
+- **unsigned** → flagged `unsigned:<path>:<pid>` — **allowed but clearly flagged**, never silently trusted, never auto-approved.
+
+### Signing + the one human-only step
+
+The SE gate **requires a real Apple Developer signing identity** — an ad-hoc signature cannot carry the entitlement, so `SecKeyCreateRandomKey` on the Enclave fails with `errSecMissingEntitlement` (-34018). Everything else (the whole store/agent/client logic) is built and unit-tested headlessly against a fake Enclave; only the real encrypt/decrypt + Touch ID need your signed build.
+
+`Sesame.entitlements` is **minimal** (pinned): Hardened Runtime (via `codesign -o runtime`), **not** sandboxed (`com.apple.security.app-sandbox = false` — the agent writes to Application Support and opens a socket), and **no** `keychain-access-groups`.
+
+```
+# 1. Build + install a SIGNED agent (your Developer identity is the one human input):
+SESAME_SIGN_ID="Developer ID Application: Your Name (TEAMID)" bash scripts/build-app.sh
+
+# 2. Confirm the identity + entitlements landed:
+codesign -dv --entitlements - ~/Applications/Sesame.app
+#   expect your Team ID, the runtime flag, and app-sandbox = false
+
+# 3. Turn on the SE backend, relaunch the app so the agent owns the SE store:
+open ~/Applications/Sesame.app
+#   set "storage_backend": "secure-enclave" in config.json (data_source stays "agent"), relaunch
+
+# 4. Migrate + PROVE the gate is cryptographic:
+sesame migrate                       # re-wraps advisory secrets (Touch ID per secret)
+sesame get SOME_SECRET               # the APP's Touch ID prompt fires, then the value prints
+xxd ~/Library/Application\ Support/Sesame/vault/SOME_SECRET.bin | head
+#   ^ ciphertext (garbage) — proof the on-disk blob is encrypted, not the value
+sesame run SOME_SECRET -- printenv SOME_SECRET   # injected into the child's env
+
+# 5. After verifying, drop the old advisory copies:
+sesame rm SOME_SECRET --advisory --confirm
+```
+
+Without `SESAME_SIGN_ID`, `build-app.sh` falls back to an ad-hoc signature (Stage-A advisory behavior) and prints that the SE gate needs a real identity.
+
+### Testing note (Stage B)
+
+`swift test` stays fully headless: a **fake Enclave provider** models the real API (ECIES round-trip, throws on an invalidated/absent key, serializes concurrent access, deny-path), so the SE store, agent socket (real AF_UNIX round-trip in-process), CLI-as-client routing, agent-down fallback, concurrency + timeout, and unsigned-peer flagging are all covered. The **real** Secure-Enclave test **skips cleanly** without a signed + entitled build.
