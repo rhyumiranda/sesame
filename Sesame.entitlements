@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Sesame agent entitlements — MINIMAL by design (pinned decision #4).
+
+	  Hardened Runtime is applied via `codesign -o runtime` (a signing flag, not
+	  an entitlement) — required for notarization and to run SE crypto under a
+	  trusted runtime.
+
+	  NOT sandboxed: the agent writes the ciphertext vault under Application
+	  Support and opens a Unix-domain socket in the login session — both of which
+	  the App Sandbox would block. So the sandbox entitlement is explicitly false.
+
+	  NO keychain-access-groups: the Secure-Enclave key is a keychain token item
+	  under the app's OWN default access group (decision #3); a signed app reaches
+	  its own items with no special entitlement — that key is only for CROSS-app
+	  keychain sharing (and is a paid/restricted entitlement). Adding it would be
+	  wrong here. If a future SE operation is rejected for a missing entitlement,
+	  document the exact key and add ONLY that one.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+</dict>
+</plist>

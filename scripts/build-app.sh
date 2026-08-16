@@ -2,12 +2,23 @@
 #
 # build-app.sh — assemble, ad-hoc-sign, and install the Sesame menu-bar app.
 #
-# Stage A packaging (no Xcode, no Apple Developer account): builds the SwiftPM
-# `SesameApp` executable in release, wraps it in a proper `Sesame.app` bundle
-# with the required Info.plist, ad-hoc code-signs it, and installs it to
-# ~/Applications — where SMAppService can discover it as a login item.
+# Packaging: builds the SwiftPM `SesameApp` executable in release, wraps it in a
+# proper `Sesame.app` bundle with the required Info.plist, code-signs it, and
+# installs it to ~/Applications — where SMAppService can discover it as a login
+# item.
 #
-# Usage: scripts/build-app.sh
+# TWO SIGNING MODES:
+#   • SIGNED (Stage B — Secure Enclave works): set SESAME_SIGN_ID to your Apple
+#     Developer identity, e.g.
+#         SESAME_SIGN_ID="Developer ID Application: Your Name (TEAMID)" \
+#             bash scripts/build-app.sh
+#     Signs with Hardened Runtime (-o runtime) + Sesame.entitlements. ONLY a real
+#     identity can carry the entitlement the SE gate needs — ad-hoc cannot.
+#   • AD-HOC (Stage A — advisory only): no SESAME_SIGN_ID → ad-hoc signature.
+#     The menu-bar app + advisory storage work; the Secure-Enclave gate does NOT
+#     (SecKeyCreateRandomKey on the Enclave fails without a real identity).
+#
+# Usage: [SESAME_SIGN_ID="…"] scripts/build-app.sh
 set -euo pipefail
 
 APP_NAME="Sesame"
@@ -15,7 +26,8 @@ BUNDLE_ID="dev.sesame.app"
 EXECUTABLE="Sesame"          # CFBundleExecutable — the binary name inside MacOS/
 PRODUCT="SesameApp"          # the SwiftPM executable target/product name
 MIN_MACOS="13.0"
-VERSION="0.2.0"              # Milestone 2, Stage A
+VERSION="0.3.0"              # Milestone 2, Stage B
+ENTITLEMENTS="Sesame.entitlements"
 
 # Repo root = parent of this script's dir (works from any CWD).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,8 +85,25 @@ cat > "$STAGE_APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> ad-hoc code-sign (no Apple Developer account needed for Stage A)"
-codesign -s - --force --deep "$STAGE_APP"
+SIGNED_MODE=0
+if [ -n "${SESAME_SIGN_ID:-}" ]; then
+    SIGNED_MODE=1
+    if [ ! -f "$REPO_ROOT/$ENTITLEMENTS" ]; then
+        echo "error: $ENTITLEMENTS not found — required for signed mode" >&2
+        exit 1
+    fi
+    echo "==> code-sign (Hardened Runtime + entitlements) with: $SESAME_SIGN_ID"
+    codesign --force --deep \
+        --options runtime \
+        --entitlements "$REPO_ROOT/$ENTITLEMENTS" \
+        --sign "$SESAME_SIGN_ID" \
+        "$STAGE_APP"
+else
+    echo "==> ad-hoc code-sign (NO Apple Developer identity — advisory only)"
+    echo "    NOTE: the Secure-Enclave gate will NOT work under an ad-hoc signature."
+    echo "    Set SESAME_SIGN_ID=\"Developer ID Application: <name> (<team>)\" to enable it."
+    codesign -s - --force --deep "$STAGE_APP"
+fi
 codesign -dv "$STAGE_APP" 2>&1 | sed 's/^/    /'
 
 # Install to ~/Applications (SMAppService discovers mainApp login items
@@ -90,3 +119,29 @@ cp -R "$STAGE_APP" "$DEST_APP"
 echo
 echo "Done. Launch it with:"
 echo "    open \"$DEST_APP\""
+
+if [ "$SIGNED_MODE" = 1 ]; then
+    cat <<VERIFY
+
+==> Post-signing verification (prove the Secure-Enclave gate is real)
+  1. Confirm the identity + entitlements landed:
+         codesign -dv --entitlements - "$DEST_APP"
+     (expect your Team ID and 'com.apple.security.app-sandbox = false', runtime flag set)
+  2. Launch the agent, then flip on the SE backend:
+         open "$DEST_APP"
+         # in ~/Library/Application Support/Sesame/config.json set:
+         #   "storage_backend": "secure-enclave"   (data_source stays "agent")
+         # then relaunch the app so the agent owns the SE store.
+  3. Migrate + prove the cryptographic gate:
+         sesame migrate                 # re-wraps advisory secrets (Touch ID per secret)
+         sesame get SOME_SECRET         # the APP's Touch ID prompt must fire, then the value prints
+         xxd ~/Library/Application\\ Support/Sesame/vault/SOME_SECRET.bin | head
+         #   ^ must be ciphertext (garbage) — proof the blob on disk is encrypted
+         sesame run SOME_SECRET -- printenv SOME_SECRET   # injected into the child
+  4. After verifying, drop the old advisory copies:
+         sesame rm SOME_SECRET --advisory --confirm
+VERIFY
+else
+    echo
+    echo "Ad-hoc build: advisory storage only. Re-run with SESAME_SIGN_ID set to enable the SE gate."
+fi
