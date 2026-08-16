@@ -38,7 +38,7 @@ public struct SecretInfo {
 /// (see `Gate.swift`). Any same-user process with a login session can read
 /// these items directly. This is the accepted $0-tier tradeoff; Milestone 2
 /// (signed daemon + Secure-Enclave key-wrap) makes the gate cryptographic.
-public struct KeychainStore: Sendable {
+public struct KeychainStore: StorageBackend, Sendable {
     public let service: String
 
     public init(service: String = "dev.sesame") {

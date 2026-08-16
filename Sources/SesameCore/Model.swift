@@ -17,6 +17,9 @@ public enum SesameError: Error {
     case keychain(OSStatus)               // exit 1
     case io(String)                       // exit 1
     case authUnavailable(String)          // exit 1
+    case enclave(String)                  // exit 1  (SE key/crypto failure)
+    case agentUnavailable(String)         // exit 1  (agent socket down/unreachable)
+    case timeout                          // exit 1  (Touch ID queue timed out)
 
     public var exitCode: Int32 {
         switch self {
@@ -48,6 +51,12 @@ public enum SesameError: Error {
             return "io error — \(detail)"
         case .authUnavailable(let detail):
             return "Touch ID unavailable — \(detail)"
+        case .enclave(let detail):
+            return "Secure Enclave error — \(detail)"
+        case .agentUnavailable(let detail):
+            return "Sesame agent unavailable — \(detail)"
+        case .timeout:
+            return "timed out waiting for Touch ID — try again"
         }
     }
 
@@ -57,6 +66,7 @@ public enum SesameError: Error {
         case .notFound: return "notfound"
         case .denied: return "denied"
         case .rateLimited: return "ratelimited"
+        case .timeout: return "timeout"
         default: return "error"
         }
     }
