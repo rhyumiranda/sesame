@@ -85,7 +85,7 @@ struct Sesame: ParsableCommand {
         cryptographic binding). Set storage_backend=secure-enclave (with the agent \
         running) for the hardware-bound gate. See the README's security note.
         """,
-        version: "sesame \(sesameVersion) (Milestone 2 · Stage B)",
+        version: "sesame \(sesameVersion)",
         subcommands: [Add.self, Get.self, Run.self, List.self, Remove.self, Log.self,
                       Migrate.self, Export.self, Import.self]
     )
@@ -97,7 +97,7 @@ struct Sesame: ParsableCommand {
 
     func run() throws {
         if showVersion {
-            Out.line("sesame \(sesameVersion) (Milestone 2 · Stage B)")
+            Out.line("sesame \(sesameVersion)")
             return
         }
         let store = resolveWiring().store

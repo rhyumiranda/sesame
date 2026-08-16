@@ -9,6 +9,7 @@ Don't repeat what the code already shows — point to the file, function, or com
 Prefer rewriting or pruning an existing entry over adding a new one; skip trivial tasks that taught nothing durable.
 Keep each entry to one line, action first.
 
+- Write commit/PR messages as concrete action + purpose (conventional commits `type(scope): what changed and why`) — NEVER internal roadmap labels ("Phase 1", "Milestone 2", "Stage A", "task-2b"); they're inconsistent and unscannable, hiding what was done.
 - Inside a ParsableCommand, call Foundation.exit(code) — bare exit() resolves to ArgumentParser's exit(withError:) and won't compile with an Int32.
 - For 'NAME... -- cmd' parsing use one @Argument(parsing: .captureForPassthrough) and split on '--' yourself — .remaining eats the '--' terminator and .upToNextOption doesn't exist in swift-argument-parser.
 - SMAppService.mainApp discovers a login item only when the .app lives in ~/Applications or /Applications — a bundle run from .build/ registers but never auto-launches; scripts/build-app.sh installs there for that reason.
