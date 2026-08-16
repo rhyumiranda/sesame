@@ -4,16 +4,49 @@ import SesameCore
 
 // MARK: - Shared wiring
 //
-// Real commands use the login Keychain (service "dev.sesame"), the real Touch
-// ID gate, and the default access log. Tests bypass these command wrappers and
-// exercise the core types (KeychainStore, Runner, RateLimiter, AccessLog)
-// directly with fakes — see Tests/sesameTests.
+// The CLI is a THIN CLIENT (Stage B). It resolves — per config — how to reach
+// the store:
+//   • data_source = agent (default) + an agent is listening → route every op
+//     through the signed agent over its socket. The agent owns the Secure-
+//     Enclave key and raises Touch ID, so the CLI uses a NullAuthenticator (no
+//     second, redundant prompt) and AgentBackedStore.
+//   • data_source = agent + agent DOWN → FAIL SAFE to the advisory local path
+//     (login Keychain "dev.sesame" + the real LAContext gate) = Stage-A behavior.
+//   • data_source = local → the config-selected local store directly.
+//
+// Tests bypass these wrappers and exercise the core types with fakes.
 
 private let kService = "dev.sesame"
 
-private func makeStore() -> KeychainStore { KeychainStore(service: kService) }
-private func makeAuth() -> Authenticator { LAAuthenticator() }
 private func makeLog() -> AccessLog { AccessLog() }
+
+/// The advisory login-Keychain store the CLI can always reach on its own — the
+/// Stage-A store and the fail-safe fallback.
+private func advisoryStore() -> KeychainStore { KeychainStore(service: kService) }
+
+/// Resolved store + gate for one command invocation.
+struct Wiring {
+    let store: StorageBackend
+    let auth: Authenticator
+    /// True when routed through the agent (the agent, not the CLI, prompts).
+    let routedToAgent: Bool
+}
+
+/// Resolve the store/gate from config, applying the agent-down fail-safe.
+private func resolveWiring(config: Config = .load()) -> Wiring {
+    if config.dataSource == .agent {
+        let client = AgentClient(socketPath: config.agentSocket)
+        if client.isAvailable() {
+            return Wiring(store: AgentBackedStore(client: client, requester: Requester.parentName()),
+                          auth: NullAuthenticator(),
+                          routedToAgent: true)
+        }
+        // Agent not listening → fail safe to the advisory local path (Stage A).
+        return Wiring(store: advisoryStore(), auth: LAAuthenticator(), routedToAgent: false)
+    }
+    // Explicit local: honor the configured backend directly.
+    return Wiring(store: StoreFactory.local(config), auth: LAAuthenticator(), routedToAgent: false)
+}
 
 struct CommonFlags: ParsableArguments {
     @Flag(name: .customLong("json"),
@@ -40,14 +73,16 @@ struct Sesame: ParsableCommand {
         commandName: "sesame",
         abstract: "Open sesame — a fingerprint-gated vault for your agent's env secrets.",
         discussion: """
-        Free MVP (Milestone 1): the Touch ID gate is CLI-layer / ADVISORY \
-        (LAContext) — it is NOT cryptographically enforced by the login \
-        Keychain. Any same-user process can read the stored item directly. \
-        Milestone 2 (Secure Enclave in a signed daemon) hardens it. See the \
-        README's security note.
+        The CLI is a thin client. By default (data_source=agent) it routes get/run \
+        through the signed Sesame agent, which owns the Secure-Enclave key and \
+        raises Touch ID. When no agent is running it FAILS SAFE to the advisory \
+        local path (Stage-A login-Keychain + a CLI-layer LAContext gate — NOT a \
+        cryptographic binding). Set storage_backend=secure-enclave (with the agent \
+        running) for the hardware-bound gate. See the README's security note.
         """,
-        version: "sesame 0.1.0 (Free MVP)",
-        subcommands: [Add.self, Get.self, Run.self, List.self, Remove.self, Log.self]
+        version: "sesame 0.3.0 (Milestone 2 · Stage B)",
+        subcommands: [Add.self, Get.self, Run.self, List.self, Remove.self, Log.self,
+                      Migrate.self, Export.self, Import.self]
     )
 
     @Flag(name: .customShort("v"), help: "Print the version.")
@@ -57,10 +92,10 @@ struct Sesame: ParsableCommand {
 
     func run() throws {
         if showVersion {
-            Out.line("sesame 0.1.0 (Free MVP)")
+            Out.line("sesame 0.3.0 (Milestone 2 · Stage B)")
             return
         }
-        let store = makeStore()
+        let store = resolveWiring().store
         let infos: [SecretInfo]
         do {
             infos = try store.list()
@@ -128,7 +163,7 @@ struct Add: ParsableCommand {
             Out.failAndExit(.io("empty value on stdin — nothing to store"), json: common.json)
         }
 
-        let store = makeStore()
+        let store = resolveWiring().store
         let log = makeLog()
         let requester = Requester.parentName()
 
@@ -175,9 +210,10 @@ struct Get: ParsableCommand {
             Out.failAndExit(error, json: common.json)
         }
 
-        let store = makeStore()
+        let wiring = resolveWiring()
+        let store = wiring.store
         let log = makeLog()
-        let auth = makeAuth()
+        let auth = wiring.auth
         let limiter = RateLimiter()
         let requester = Requester.parentName()
 
@@ -257,9 +293,10 @@ struct Run: ParsableCommand {
             Out.failAndExit(.io("no command after -- — usage: sesame run NAME -- <cmd>"), json: common.json)
         }
 
-        let store = makeStore()
+        let wiring = resolveWiring()
+        let store = wiring.store
         let log = makeLog()
-        let auth = makeAuth()
+        let auth = wiring.auth
         let limiter = RateLimiter()
         let requester = Requester.parentName()
 
@@ -318,7 +355,7 @@ struct List: ParsableCommand {
     @OptionGroup var common: CommonFlags
 
     func run() throws {
-        let store = makeStore()
+        let store = resolveWiring().store
         let infos: [SecretInfo]
         do {
             infos = try store.list()
@@ -367,6 +404,10 @@ struct Remove: ParsableCommand {
     @Flag(name: .customLong("force"), help: "Alias for --confirm.")
     var force = false
 
+    @Flag(name: .customLong("advisory"),
+          help: "Delete from the ADVISORY login-Keychain store directly (drop a Stage-A copy after 'sesame migrate').")
+    var advisory = false
+
     @OptionGroup var common: CommonFlags
 
     func run() throws {
@@ -380,7 +421,9 @@ struct Remove: ParsableCommand {
             Out.failAndExit(.missingConfirm, json: common.json)
         }
 
-        let store = makeStore()
+        // --advisory always targets the login-Keychain store directly (never the
+        // agent), so a verified migration can drop the old advisory copies.
+        let store: StorageBackend = advisory ? advisoryStore() : resolveWiring().store
         let log = makeLog()
         let requester = Requester.parentName()
 
@@ -466,6 +509,120 @@ struct Log: ParsableCommand {
             Out.line("summary: total: \(total)")
         }
         Out.line("help[2]: '--since <ISO>' to filter · '--json' for machine output")
+    }
+}
+
+// MARK: - migrate
+
+struct Migrate: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "migrate",
+        abstract: "Re-wrap advisory (Stage-A login-Keychain) secrets into the Secure-Enclave vault.",
+        discussion: """
+        Reads each advisory secret behind Touch ID and re-encrypts it into the SE \
+        store via the agent. The advisory copies are LEFT INTACT; after verifying, \
+        drop them with 'sesame rm <NAME> --advisory'. Requires the signed Sesame \
+        agent to be running (only it owns the Secure-Enclave key).
+        """
+    )
+
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        let wiring = resolveWiring()
+        guard wiring.routedToAgent else {
+            Out.failAndExit(.agentUnavailable("migrate needs the signed Sesame agent running (start Sesame.app; set storage_backend=secure-enclave)"),
+                            json: common.json)
+        }
+        // Source = advisory login-Keychain; dest = the SE store via the agent.
+        let report = Recovery.migrate(from: advisoryStore(), to: wiring.store,
+                                      auth: LAAuthenticator(), log: makeLog())
+        if common.json {
+            Out.line(Out.json(["ok": report.failed.isEmpty,
+                               "migrated": report.moved,
+                               "skipped": report.skipped,
+                               "failed": report.failed.map { ["name": $0.name, "error": $0.error] }]))
+        } else {
+            Out.line("migrated[\(report.moved.count)]: \(report.moved.joined(separator: " "))")
+            if !report.skipped.isEmpty {
+                Out.line("skipped[\(report.skipped.count)]: \(report.skipped.joined(separator: " ")) (already in SE vault)")
+            }
+            for f in report.failed {
+                Out.err("failed: \(f.name) — \(f.error) (advisory copy left intact)")
+            }
+            Out.line("help[1]: verify with 'sesame get <NAME>', then 'sesame rm <NAME> --advisory --confirm' to drop old copies")
+        }
+        if !report.failed.isEmpty { Foundation.exit(1) }
+    }
+}
+
+// MARK: - export
+
+struct Export: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "export",
+        abstract: "Dump every secret as NAME=value (a Touch-ID-gated backup YOU control).",
+        discussion: """
+        SE-backed secrets live only on this Mac and cannot be re-derived after a \
+        device loss/reset. Run this to produce a backup you store yourself, then \
+        restore with 'sesame import'. Each secret is released behind Touch ID; the \
+        values print to STDOUT (redirect to a file you protect).
+        """
+    )
+
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        let wiring = resolveWiring()
+        let pairs: [(name: String, value: String)]
+        do {
+            pairs = try Recovery.export(from: wiring.store, auth: wiring.auth)
+        } catch let error as SesameError {
+            Out.failAndExit(error, json: common.json)
+        }
+        Out.err("ok: exported \(pairs.count) secret(s) — store this backup securely; anyone with it has your secrets")
+        for (name, value) in pairs {
+            Out.line("\(name)=\(value)")
+        }
+    }
+}
+
+// MARK: - import
+
+struct Import: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "import",
+        abstract: "Restore NAME=value lines from STDIN (a prior 'sesame export') into the vault.",
+        discussion: "Idempotent: an existing name is skipped, never overwritten. Reads from STDIN."
+    )
+
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let pairs: [(name: String, value: String)]
+        do {
+            pairs = try Recovery.parseEnv(text)
+        } catch let error as SesameError {
+            Out.failAndExit(error, json: common.json)
+        }
+        guard !pairs.isEmpty else {
+            Out.failAndExit(.io("no NAME=value lines on stdin — nothing to import"), json: common.json)
+        }
+        let report = Recovery.importSecrets(pairs, into: resolveWiring().store, log: makeLog())
+        if common.json {
+            Out.line(Out.json(["ok": report.failed.isEmpty,
+                               "imported": report.moved,
+                               "skipped": report.skipped,
+                               "failed": report.failed.map { ["name": $0.name, "error": $0.error] }]))
+        } else {
+            Out.line("imported[\(report.moved.count)]: \(report.moved.joined(separator: " "))")
+            if !report.skipped.isEmpty {
+                Out.line("skipped[\(report.skipped.count)]: \(report.skipped.joined(separator: " ")) (already present)")
+            }
+            for f in report.failed { Out.err("failed: \(f.name) — \(f.error)") }
+        }
+        if !report.failed.isEmpty { Foundation.exit(1) }
     }
 }
 
