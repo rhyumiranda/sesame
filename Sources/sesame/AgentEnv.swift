@@ -117,6 +117,76 @@ struct Exec: ParsableCommand {
     }
 }
 
+// MARK: - setup
+
+struct Setup: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "setup",
+        abstract: "Put ~/.sesame/shims on your PATH (for on-demand shims) — idempotent shell-rc edit.",
+        discussion: """
+        Optional: only needed if you use on-demand secret shims (`sesame shim \
+        install`). Appends exactly `export PATH="$HOME/.sesame/shims:$PATH"` to \
+        ~/.zshrc (and ~/.bashrc if it exists) once — re-running is a no-op. The \
+        core three steps (brew → `sesame add` → `sesame init` → `sesame exec`) \
+        do NOT need this.
+        """
+    )
+
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        // Ensure the shims dir exists so the PATH entry resolves.
+        let shimsDir = Shims.dir()
+        do {
+            try FileManager.default.createDirectory(at: shimsDir, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o755])
+        } catch {
+            Out.failAndExit(.io("could not create \(shimsDir.path): \(error.localizedDescription)"),
+                            json: common.json)
+        }
+
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+        // zsh is macOS's default shell → create the rc if absent; bash only if present.
+        let targets: [(url: URL, create: Bool)] = [
+            (home.appendingPathComponent(".zshrc"), true),
+            (home.appendingPathComponent(".bashrc"), false)
+        ]
+
+        var updated: [String] = []
+        var skipped: [String] = []
+        for target in targets {
+            let appended: Bool
+            do {
+                appended = try SesameCore.Setup.ensurePathLine(in: target.url, createIfMissing: target.create)
+            } catch {
+                Out.failAndExit(.io("could not update \(target.url.path): \(error.localizedDescription)"),
+                                json: common.json)
+            }
+            let name = target.url.lastPathComponent
+            if appended { updated.append(name) }
+            else if FileManager.default.fileExists(atPath: target.url.path) { skipped.append(name) }
+        }
+
+        if common.json {
+            Out.line(Out.json(["ok": true, "action": "setup",
+                               "updated": updated, "already": skipped,
+                               "shimsDir": shimsDir.path,
+                               "line": SesameCore.Setup.pathLine]))
+            return
+        }
+
+        Out.line(Banner.text)
+        Out.line("")
+        if updated.isEmpty {
+            Out.line("ok: PATH already wired (\(skipped.joined(separator: ", "))) — you're set.")
+        } else {
+            Out.line("ok: added the shims dir to your PATH in \(updated.joined(separator: ", ")) — you're set.")
+            Out.line("next: open a new shell (or 'source ~/.zshrc') so it takes effect.")
+        }
+        Out.line("help[1]: this is only for on-demand shims; 'sesame exec -- <cmd>' needs no PATH change")
+    }
+}
+
 // MARK: - init
 
 struct Init: ParsableCommand {
@@ -146,7 +216,8 @@ struct Init: ParsableCommand {
             Out.line(Out.json(["ok": true, "action": "init", "created": true, "path": url.path]))
         } else {
             Out.line("ok: wrote \(url.path)")
-            Out.line("help[2]: add secret names + optional '[commands]' mappings · 'sesame add <NAME>' to store values")
+            Out.line("next[2]: 'sesame add <NAME>' to store each secret · 'sesame exec -- <your agent>' to launch with them")
+            Out.line("help[1]: for on-demand per-command shims, add a '[commands]' map then 'sesame shim install' (init never installs shims)")
         }
     }
 }

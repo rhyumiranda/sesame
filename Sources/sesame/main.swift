@@ -88,7 +88,7 @@ struct Sesame: ParsableCommand {
         version: "sesame \(sesameVersion)",
         subcommands: [Add.self, Get.self, Run.self, Exec.self, List.self, Remove.self, Log.self,
                       Migrate.self, Export.self, Import.self,
-                      Init.self, Shim.self, ShimExec.self]
+                      Setup.self, Init.self, Shim.self, ShimExec.self]
     )
 
     @Flag(name: .customShort("v"), help: "Print the version.")
@@ -129,6 +129,8 @@ struct Sesame: ParsableCommand {
             return
         }
 
+        Out.line(Banner.text)
+        Out.line("")
         if recent.isEmpty {
             Out.line("secrets[0]: (none added yet)")
         } else {
