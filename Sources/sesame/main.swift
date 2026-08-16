@@ -23,7 +23,7 @@ private let kService = "dev.sesame"
 // comment on the SAME line as the version number, or the generic updater skips it.
 let sesameVersion = "0.3.0" // x-release-please-version
 
-private func makeLog() -> AccessLog { AccessLog() }
+func makeLog() -> AccessLog { AccessLog() }
 
 /// The advisory login-Keychain store the CLI can always reach on its own — the
 /// Stage-A store and the fail-safe fallback.
@@ -86,8 +86,9 @@ struct Sesame: ParsableCommand {
         running) for the hardware-bound gate. See the README's security note.
         """,
         version: "sesame \(sesameVersion)",
-        subcommands: [Add.self, Get.self, Run.self, List.self, Remove.self, Log.self,
-                      Migrate.self, Export.self, Import.self]
+        subcommands: [Add.self, Get.self, Run.self, Exec.self, List.self, Remove.self, Log.self,
+                      Migrate.self, Export.self, Import.self,
+                      Init.self, Shim.self, ShimExec.self]
     )
 
     @Flag(name: .customShort("v"), help: "Print the version.")
@@ -299,29 +300,16 @@ struct Run: ParsableCommand {
         }
 
         let wiring = resolveWiring()
-        let store = wiring.store
         let log = makeLog()
-        let auth = wiring.auth
-        let limiter = RateLimiter()
         let requester = Requester.parentName()
 
         var injected: [String: String] = [:]
-        for name in names {
-            do {
-                try Name.validate(name)
-                guard try store.exists(name) else { throw SesameError.notFound(name) }
-                if let wait = limiter.check(name: name) {
-                    throw SesameError.rateLimited(name: name, secondsLeft: wait)
-                }
-                try auth.authenticate(reason: "release \(name)")
-                let value = try store.copyValue(name: name)
-                injected[name] = String(data: value, encoding: .utf8) ?? ""
-                store.recordUse(name: name, by: requester)
-                log.append(LogEntry(ts: Time.iso(), op: "run", name: name, requester: requester, result: "ok"))
-            } catch let error as SesameError {
-                log.append(LogEntry(ts: Time.iso(), op: "run", name: name, requester: requester, result: error.logResult))
-                Out.failAndExit(error, json: common.json)
-            }
+        do {
+            injected = try Resolve.secrets(names: names, store: wiring.store, auth: wiring.auth,
+                                           limiter: RateLimiter(), log: log, requester: requester,
+                                           op: "run", skipIfPresent: false, env: [:])
+        } catch let error as SesameError {
+            Out.failAndExit(error, json: common.json)
         }
 
         // JSON mode must report the child's exitCode → spawn + wait.
