@@ -20,11 +20,15 @@ built from source with `bash scripts/build-app.sh`.
 ## Build model
 
 Build-from-source with the Swift toolchain from the **Command Line Tools** — no
-full Xcode. `install` runs a plain `swift build -c release` (no
-`--disable-sandbox`; SwiftPM fetches `swift-argument-parser` over the network
-during the build) and installs the arch-specific product via
+full Xcode. `install` runs `swift build --disable-sandbox -c release` and
+installs the arch-specific product via
 `Dir.glob(".build/*/release/sesame").first` (the release binary lives at
 `.build/<triple>/release/sesame`, never a bare `.build/release/sesame`).
+
+The formula **must keep `--disable-sandbox`**: SwiftPM runs its own sandbox
+nested inside Homebrew's build sandbox, and that nesting fails with
+`sandbox-exec: sandbox_apply: Operation not permitted` — `brew install` breaks
+without the flag.
 
 ## Publishing a release (manual, run by the maintainer)
 

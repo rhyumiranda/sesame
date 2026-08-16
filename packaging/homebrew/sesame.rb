@@ -18,9 +18,8 @@ class Sesame < Formula
   depends_on :macos
 
   def install
-    # Plain release build — verified NO `--disable-sandbox` is needed; SwiftPM
-    # resolves swift-argument-parser over the network during the build.
-    system "swift", "build", "-c", "release"
+    # --disable-sandbox: SwiftPM's own sandbox fails inside Homebrew's build sandbox
+    system "swift", "build", "--disable-sandbox", "-c", "release"
     # Arch-safe: the product lives at .build/<triple>/release/sesame, never a
     # bare .build/release/sesame.
     bin.install Dir.glob(".build/*/release/sesame").first
