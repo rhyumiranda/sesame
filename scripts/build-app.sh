@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# build-app.sh — assemble, ad-hoc-sign, and install the Sesame menu-bar app.
+# build-app.sh — assemble, ad-hoc-sign, and install the Sesame windowed app.
 #
 # Packaging: builds the SwiftPM `SesameApp` executable in release, wraps it in a
-# proper `Sesame.app` bundle with the required Info.plist, code-signs it, and
-# installs it to ~/Applications — where SMAppService can discover it as a login
-# item.
+# proper `Sesame.app` bundle with the required Info.plist (LSUIElement=false — a
+# Dock icon + a main window), code-signs it, and installs it to ~/Applications —
+# where SMAppService can discover it as a login item.
 #
 # TWO SIGNING MODES:
 #   • SIGNED (Stage B — Secure Enclave works): set SESAME_SIGN_ID to your Apple
@@ -77,8 +77,11 @@ cat > "$STAGE_APP/Contents/Info.plist" <<PLIST
 	<string>$VERSION</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$MIN_MACOS</string>
+	<!-- Windowed app: Dock icon + normal menu bar + a main window (NOT a
+	     background agent). The app delegate also sets NSApp activation policy
+	     to .regular; keep these two in sync. -->
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Sesame — a fingerprint-gated vault for your agent's env secrets.</string>
 </dict>

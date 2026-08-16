@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SesameCore
 
 /// The popover's data source. Wraps the shared `KeychainStore` (service
@@ -111,5 +112,83 @@ final class SecretsViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Reveal a secret's value behind Touch ID and copy it to the clipboard —
+    /// the value is NEVER rendered on screen or written to any log. Mirrors the
+    /// CLI `get` path: authenticate → read → `recordUse` (stamps lastUsedAt +
+    /// lastUsedBy so the row's "used X ago" is real) → log the release.
+    ///
+    /// Runs the blocking biometric evaluation + Keychain read off the main
+    /// thread, then hops back to publish only metadata (a status line, never the
+    /// value). The value lives on the worker thread's stack and the clipboard.
+    func revealAndCopy(name: String) {
+        let store = self.store
+        let auth = self.auth
+        let log = self.log
+        let requester = self.requester
+        DispatchQueue.global(qos: .userInitiated).async {
+            var result: Result<Void, SesameError>
+            do {
+                try auth.authenticate(reason: "reveal secret “\(name)”")
+                let value = try store.copyValue(name: name, reason: "reveal \(name)")
+                // Stamp real last-used metadata, exactly like the CLI's get.
+                store.recordUse(name: name, by: requester)
+                log.append(LogEntry(ts: Time.iso(), op: "get", name: name,
+                                    requester: requester, result: "ok"))
+                // Copy to the clipboard — the ONLY place the value goes.
+                DispatchQueue.main.async {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(String(data: value, encoding: .utf8) ?? "", forType: .string)
+                }
+                result = .success(())
+            } catch let error as SesameError {
+                log.append(LogEntry(ts: Time.iso(), op: "get", name: name,
+                                    requester: requester, result: error.logResult))
+                result = .failure(error)
+            } catch {
+                result = .failure(.io(error.localizedDescription))
+            }
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self.statusMessage = "copied \(name) to the clipboard"
+                    self.errorMessage = nil
+                    self.refresh() // pick up the fresh lastUsedAt
+                case .failure(let error):
+                    self.errorMessage = error.message
+                }
+            }
+        }
+    }
+}
+
+/// Humanizes an ISO-8601 timestamp into a friendly relative phrase for the UI
+/// (e.g. "used 2m ago", "never used"). The store keeps timestamps as ISO
+/// strings; the window must show a relative time, not a raw ISO string.
+enum RelativeTime {
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let relative: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    /// Parse an ISO string to a `Date` (nil if absent/unparseable).
+    static func date(from isoString: String?) -> Date? {
+        guard let s = isoString else { return nil }
+        return iso.date(from: s)
+    }
+
+    /// "used 2m ago" for a real last-use, "never used" when there is none.
+    static func lastUsed(_ isoString: String?, now: Date = Date()) -> String {
+        guard let date = date(from: isoString) else { return "never used" }
+        return "used " + relative.localizedString(for: date, relativeTo: now)
     }
 }
