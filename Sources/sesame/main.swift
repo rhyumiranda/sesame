@@ -18,6 +18,11 @@ import SesameCore
 
 private let kService = "dev.sesame"
 
+// Single source of truth for the CLI version. release-please bumps the literal on
+// the marker line at each release — keep the `x-release-please-version` marker
+// comment on the SAME line as the version number, or the generic updater skips it.
+let sesameVersion = "0.3.0" // x-release-please-version
+
 private func makeLog() -> AccessLog { AccessLog() }
 
 /// The advisory login-Keychain store the CLI can always reach on its own — the
@@ -80,7 +85,7 @@ struct Sesame: ParsableCommand {
         cryptographic binding). Set storage_backend=secure-enclave (with the agent \
         running) for the hardware-bound gate. See the README's security note.
         """,
-        version: "sesame 0.3.0 (Milestone 2 · Stage B)",
+        version: "sesame \(sesameVersion) (Milestone 2 · Stage B)",
         subcommands: [Add.self, Get.self, Run.self, List.self, Remove.self, Log.self,
                       Migrate.self, Export.self, Import.self]
     )
@@ -92,7 +97,7 @@ struct Sesame: ParsableCommand {
 
     func run() throws {
         if showVersion {
-            Out.line("sesame 0.3.0 (Milestone 2 · Stage B)")
+            Out.line("sesame \(sesameVersion) (Milestone 2 · Stage B)")
             return
         }
         let store = resolveWiring().store
