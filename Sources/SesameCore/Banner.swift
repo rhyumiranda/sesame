@@ -9,16 +9,21 @@ import Foundation
 //
 // Deliberately plain ASCII (plus one em-dash in the tagline, already used
 // repo-wide): it must render cleanly in `brew` caveats and in non-TTY pipes, so
-// there are NO ANSI colors/escapes here.
+// there are NO ANSI colors/escapes here. Solid `#` block typography (figlet
+// `banner`), ≤ 47 columns wide so it never wraps.
 
 public enum Banner {
     /// The multiline banner, WITHOUT a trailing newline (callers add their own).
-    /// A small padlock beside the "SESAME" wordmark + the tagline.
+    /// A solid figlet-style SESAME wordmark above the tagline.
     public static let text = """
-        .--.
-       /    \\    S E S A M E
-      |------|
-      | (  ) |   Open sesame — one key, one touch
-      |______|
-    """
+         #####  #######  #####     #    #     # #######
+        #     # #       #     #   # #   ##   ## #
+        #       #       #        #   #  # # # # #
+         #####  #####    #####  #     # #  #  # #####
+              # #             # ####### #     # #
+        #     # #       #     # #     # #     # #
+         #####  #######  #####  #     # #     # #######
+
+                Open sesame — one key, one touch
+        """
 }

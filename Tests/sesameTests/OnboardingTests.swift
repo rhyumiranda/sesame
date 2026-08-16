@@ -7,7 +7,9 @@ import Foundation
 
 final class BannerTests: XCTestCase {
     func testCarriesWordmarkAndTagline() {
-        XCTAssertTrue(Banner.text.contains("S E S A M E"), "the wordmark should be present")
+        // The SESAME wordmark is solid figlet-style block art; assert a
+        // distinctive slice of its baseline row.
+        XCTAssertTrue(Banner.text.contains(" #####  #######  #####"), "the wordmark should be present")
         XCTAssertTrue(Banner.text.contains("Open sesame — one key, one touch"),
                       "the tagline should be present")
     }
@@ -18,6 +20,35 @@ final class BannerTests: XCTestCase {
         let lines = Banner.text.components(separatedBy: "\n")
         XCTAssertGreaterThanOrEqual(lines.count, 4, "banner should be a few lines of art")
         XCTAssertFalse(Banner.text.hasSuffix("\n"), "no trailing newline — callers add their own")
+    }
+
+    func testFitsStandardTerminalWidth() {
+        // ≤ 64 columns so it never wraps in a terminal or `brew` output.
+        for line in Banner.text.components(separatedBy: "\n") {
+            XCTAssertLessThanOrEqual(line.count, 64, "banner line too wide (wraps): \(line)")
+        }
+    }
+
+    /// The Homebrew formula `caveats` embeds the banner VERBATIM. This locks the
+    /// two together so neither can silently drift: every banner line must appear
+    /// in the formula source (with heredoc backslashes doubled, as Ruby needs).
+    func testFormulaCaveatsEmbedTheBannerVerbatim() throws {
+        let root = URL(fileURLWithPath: #filePath)   // .../Tests/sesameTests/OnboardingTests.swift
+            .deletingLastPathComponent()             // .../Tests/sesameTests
+            .deletingLastPathComponent()             // .../Tests
+            .deletingLastPathComponent()             // repo root
+        let formula = root
+            .appendingPathComponent("packaging/homebrew/sesame.rb")
+        let source = try String(contentsOf: formula, encoding: .utf8)
+
+        for line in Banner.text.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            // Ruby's `<<~EOS` heredoc processes escapes, so a literal `\` in the
+            // banner is written `\\` in the formula source.
+            let escaped = line.replacingOccurrences(of: "\\", with: "\\\\")
+            XCTAssertTrue(source.contains(escaped),
+                          "formula caveats must embed banner line verbatim: \(line)")
+        }
     }
 }
 

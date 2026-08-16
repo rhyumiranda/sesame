@@ -27,11 +27,15 @@ class Sesame < Formula
 
   def caveats
     <<~EOS
-          .--.
-         /    \\    S E S A M E
-        |------|
-        | (  ) |   Open sesame — one key, one touch
-        |______|
+       #####  #######  #####     #    #     # #######
+      #     # #       #     #   # #   ##   ## #
+      #       #       #        #   #  # # # # #
+       #####  #####    #####  #     # #  #  # #####
+            # #             # ####### #     # #
+      #     # #       #     # #     # #     # #
+       #####  #######  #####  #     # #     # #######
+
+              Open sesame — one key, one touch
 
       Sesame guards your agent's env secrets behind Touch ID. Two steps to go:
         1. sesame add OPENAI_API_KEY          # store a secret (value read from stdin)
