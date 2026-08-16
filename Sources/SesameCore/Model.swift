@@ -128,11 +128,16 @@ public enum Out {
 
     /// Print a structured error to stderr in the requested shape, then exit.
     public static func failAndExit(_ error: SesameError, json: Bool) -> Never {
+        failAndExit(message: error.message, code: error.exitCode, json: json)
+    }
+
+    /// Same, for a plain message + exit code (e.g. a `ManifestError`).
+    public static func failAndExit(message: String, code: Int32, json: Bool) -> Never {
         if json {
-            err(Out.json(["ok": false, "error": error.message, "code": Int(error.exitCode)]))
+            err(Out.json(["ok": false, "error": message, "code": Int(code)]))
         } else {
-            err("error: \(error.message)")
+            err("error: \(message)")
         }
-        exit(error.exitCode)
+        exit(code)
     }
 }
