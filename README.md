@@ -231,3 +231,49 @@ Repeated reads of the *same* secret are throttled to **5 reads / 60 s** (in-memo
 ### Testing note
 
 `swift test` runs headlessly: the Touch ID gate is behind an `Authenticator` protocol so unit tests use a **fake** that approves/denies with no prompt, and the Keychain tests use an isolated `dev.sesame.test` service and **skip cleanly** when no login Keychain is available (CI/non-mac). The **real** Touch ID prompt can only be exercised interactively on a Mac — that prove-out is manual.
+
+---
+
+## 14 · Milestone 2 · Stage A — menu-bar app + auto-start
+
+Stage A turns the CLI into a **visible macOS menu-bar (status-bar) app** that **auto-starts at login**. It is a front-end + auto-start over the exact same login-Keychain storage Milestone 1 uses (service `dev.sesame`) — the **security model is unchanged and still advisory** (see [§13's security note](#13--usage-free-mvp--milestone-1)). Stage B (Secure-Enclave key-wrap, a signed/notarized build, the socket/XPC ask-interface) is a separate later task and is **not** in Stage A.
+
+### What ships
+
+- A **`SesameCore`** SwiftPM library shared by the `sesame` CLI and the app (storage, log, model, and the Touch ID gate — no logic duplication).
+- A **`SesameApp`** executable: a SwiftUI **`MenuBarExtra`** status-bar app (macOS 13+), packaged as an **agent app** (`LSUIElement=true` — no Dock icon, no window, just the status-bar item).
+- **Auto-start at login** via `SMAppService.mainApp`, wired to a popover toggle that reflects the real `.status`.
+
+### Build & install the app
+
+```
+scripts/build-app.sh      # or: make app
+open ~/Applications/Sesame.app
+```
+
+`build-app.sh` does `swift build -c release`, assembles `Sesame.app/Contents/{MacOS/Sesame, Info.plist, Resources}` (Info.plist: `LSUIElement=true`, `CFBundleIdentifier=dev.sesame.app`, `LSMinimumSystemVersion=13.0`), **ad-hoc code-signs** it (`codesign -s - --force --deep` — no Apple Developer account needed for Stage A), and **installs to `~/Applications/Sesame.app`**. Installing there is **required**: `SMAppService` discovers `mainApp` login items reliably only in `~/Applications` or `/Applications` — a `.app` left in `.build/` will **not** auto-launch at login.
+
+### Auto-start caveats (honored + surfaced in the UI)
+
+- **Registered ≠ launched now.** `SMAppService.mainApp.register()` succeeding means *registered*; the app actually launches at login only after the **next login/reboot**.
+- **First toggle may need approval.** The first registration can raise a macOS **"Allow in Login Items"** prompt (status `.requiresApproval`); you must click **Allow** — it cannot be automated.
+- **Location matters.** Auto-start only works because the `.app` is installed in `~/Applications` (above).
+
+### Touch ID in the app
+
+Listing secret **names needs no Touch ID** (names are not values). Touch ID (via `LAAuthenticator`) is raised only on **Remove**. The app runs in your GUI login session, so `LAContext` works. Same advisory model as the CLI; Stage B makes it cryptographic.
+
+### Manual prove-out (the menu-bar UI + biometrics can't run headless)
+
+1. Run `scripts/build-app.sh`, then `open ~/Applications/Sesame.app`.
+2. The **🔓 icon appears in the status bar** (top-right) within ~1s — no Dock icon, no window.
+3. Click it → the popover shows: a **"Sesame is running"** indicator, the secrets list (names from service `dev.sesame`, no values), Add, Remove, an access-log button, an auto-start toggle, and Quit.
+4. **Add** a test secret (name + value) → the list updates. **Remove** it → **Touch ID prompt appears** → approve → it's gone.
+5. Toggle **Start at login** ON → the row reflects `SMAppService` status `enabled`, and it appears in **System Settings → General → Login Items**. (It launches at login only after the next login/reboot; the first toggle may raise the "Allow in Login Items" prompt — click Allow.)
+6. **Quit** from the popover → the icon disappears.
+
+### Human-only steps (not automatable)
+
+- Clicking **Allow** on the macOS Login Items approval prompt.
+- The manual UI + Touch ID prove-out above.
+- (Not needed for Stage A — a proper Developer-ID signing team is a Stage B concern.)
