@@ -19,6 +19,8 @@ struct PopoverView: View {
             Divider()
             addSection
             Divider()
+            LoginItemSection()
+            Divider()
             footer
         }
         .padding(14)
