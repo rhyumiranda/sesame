@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/rhyumiranda/sesame/compare/v0.4.0...v0.5.0) (2026-08-16)
+
+
+### Features
+
+* **cli:** add branded banner, sesame setup PATH wiring, and clearer init next-steps ([3826af3](https://github.com/rhyumiranda/sesame/commit/3826af3f7de65b2c89bc47d89df818bbacff8e7b))
+
 ## [0.4.0](https://github.com/rhyumiranda/sesame/compare/v0.3.0...v0.4.0) (2026-08-16)
 
 
