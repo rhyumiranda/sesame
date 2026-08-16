@@ -241,7 +241,7 @@ Stage A turns the CLI into a **visible macOS menu-bar (status-bar) app** that **
 ### What ships
 
 - A **`SesameCore`** SwiftPM library shared by the `sesame` CLI and the app (storage, log, model, and the Touch ID gate — no logic duplication).
-- A **`SesameApp`** executable: a SwiftUI **`MenuBarExtra`** status-bar app (macOS 13+), packaged as an **agent app** (`LSUIElement=true` — no Dock icon, no window, just the status-bar item).
+- A **`SesameApp`** executable: an AppKit **`NSStatusItem`** + **`NSPopover`** status-bar app (macOS 13+, SwiftUI popover content), packaged as an **agent app** (`LSUIElement=true` — no Dock icon, no window, just the status-bar item). It uses `NSStatusItem` rather than SwiftUI's `MenuBarExtra` because a `MenuBarExtra` icon can hide behind the notch on notched MacBooks.
 - **Auto-start at login** via `SMAppService.mainApp`, wired to a popover toggle that reflects the real `.status`.
 
 ### Build & install the app
