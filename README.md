@@ -234,15 +234,16 @@ Repeated reads of the *same* secret are throttled to **5 reads / 60 s** (in-memo
 
 ---
 
-## 14 · Milestone 2 · Stage A — menu-bar app + auto-start
+## 14 · Milestone 2 · Stage A — windowed app + auto-start
 
-Stage A turns the CLI into a **visible macOS menu-bar (status-bar) app** that **auto-starts at login**. It is a front-end + auto-start over the exact same login-Keychain storage Milestone 1 uses (service `dev.sesame`) — the **security model is unchanged and still advisory** (see [§13's security note](#13--usage-free-mvp--milestone-1)). Stage B (Secure-Enclave key-wrap, a signed/notarized build, the socket/XPC ask-interface) is a separate later task and is **not** in Stage A.
+Stage A turns the CLI into a **visible, windowed macOS app** (a **Dock icon** and a **main window**) that **auto-starts at login**. It is a front-end + auto-start over the exact same login-Keychain storage Milestone 1 uses (service `dev.sesame`) — the **security model is unchanged and still advisory** (see [§13's security note](#13--usage-free-mvp--milestone-1)). Stage B (Secure-Enclave key-wrap, a signed/notarized build, the socket/XPC ask-interface) is a separate later task and is **not** in Stage A.
 
 ### What ships
 
 - A **`SesameCore`** SwiftPM library shared by the `sesame` CLI and the app (storage, log, model, and the Touch ID gate — no logic duplication).
-- A **`SesameApp`** executable: an AppKit **`NSStatusItem`** + **`NSPopover`** status-bar app (macOS 13+, SwiftUI popover content), packaged as an **agent app** (`LSUIElement=true` — no Dock icon, no window, just the status-bar item). It uses `NSStatusItem` rather than SwiftUI's `MenuBarExtra` because a `MenuBarExtra` icon can hide behind the notch on notched MacBooks.
-- **Auto-start at login** via `SMAppService.mainApp`, wired to a popover toggle that reflects the real `.status`.
+- A **`SesameApp`** executable: a **normal windowed macOS app** (macOS 13+) — `LSUIElement=false` and `NSApp.setActivationPolicy(.regular)`, so it gets a **Dock icon**, a standard menu bar, and a **main window that opens on launch**. A SwiftUI `WindowGroup` titled **"Sesame"** presents three panes (segmented): **Secrets** (search + per-secret rows showing the key name and a humanized "used X ago · requester", with reveal/copy and remove), an **Access Log** table (time · secret · requester · result, newest first), and **Settings** (auto-start toggle + active storage backend + running indicator). Reveal/copy is Touch ID-gated, copies the value to the clipboard, and never renders or logs it.
+- A **secondary `NSStatusItem`** menu-bar item remains as quick-access — clicking it re-focuses the window. The **window is the primary UI**: a status-bar-only design left nothing visible on notched MacBooks (the icon hides behind the notch), so a window + Dock icon is the reliable, always-visible fix.
+- **Auto-start at login** via `SMAppService.mainApp`, wired to a Settings toggle that reflects the real `.status`.
 
 ### Build & install the app
 
@@ -251,7 +252,7 @@ scripts/build-app.sh      # or: make app
 open ~/Applications/Sesame.app
 ```
 
-`build-app.sh` does `swift build -c release`, assembles `Sesame.app/Contents/{MacOS/Sesame, Info.plist, Resources}` (Info.plist: `LSUIElement=true`, `CFBundleIdentifier=dev.sesame.app`, `LSMinimumSystemVersion=13.0`), **ad-hoc code-signs** it (`codesign -s - --force --deep` — no Apple Developer account needed for Stage A), and **installs to `~/Applications/Sesame.app`**. Installing there is **required**: `SMAppService` discovers `mainApp` login items reliably only in `~/Applications` or `/Applications` — a `.app` left in `.build/` will **not** auto-launch at login.
+`build-app.sh` does `swift build -c release`, assembles `Sesame.app/Contents/{MacOS/Sesame, Info.plist, Resources}` (Info.plist: `LSUIElement=false` — Dock icon + window, `CFBundleIdentifier=dev.sesame.app`, `LSMinimumSystemVersion=13.0`), **ad-hoc code-signs** it (`codesign -s - --force --deep` — no Apple Developer account needed for Stage A), and **installs to `~/Applications/Sesame.app`**. Installing there is **required**: `SMAppService` discovers `mainApp` login items reliably only in `~/Applications` or `/Applications` — a `.app` left in `.build/` will **not** auto-launch at login.
 
 ### Auto-start caveats (honored + surfaced in the UI)
 
@@ -261,16 +262,16 @@ open ~/Applications/Sesame.app
 
 ### Touch ID in the app
 
-Listing secret **names needs no Touch ID** (names are not values). Touch ID (via `LAAuthenticator`) is raised only on **Remove**. The app runs in your GUI login session, so `LAContext` works. Same advisory model as the CLI; Stage B makes it cryptographic.
+Listing secret **names needs no Touch ID** (names are not values). Touch ID (via `LAAuthenticator`) is raised on **Remove** and on **Reveal/Copy** (releasing a value stamps the real `lastUsedAt`/`lastUsedBy` shown in the row). The app runs in your GUI login session, so `LAContext` works. Same advisory model as the CLI; Stage B makes it cryptographic.
 
-### Manual prove-out (the menu-bar UI + biometrics can't run headless)
+### Manual prove-out (the window UI + biometrics can't run headless)
 
 1. Run `scripts/build-app.sh`, then `open ~/Applications/Sesame.app`.
-2. The **🔓 icon appears in the status bar** (top-right) within ~1s — no Dock icon, no window.
-3. Click it → the popover shows: a **"Sesame is running"** indicator, the secrets list (names from service `dev.sesame`, no values), Add, Remove, an access-log button, an auto-start toggle, and Quit.
-4. **Add** a test secret (name + value) → the list updates. **Remove** it → **Touch ID prompt appears** → approve → it's gone.
-5. Toggle **Start at login** ON → the row reflects `SMAppService` status `enabled`, and it appears in **System Settings → General → Login Items**. (It launches at login only after the next login/reboot; the first toggle may raise the "Allow in Login Items" prompt — click Allow.)
-6. **Quit** from the popover → the icon disappears.
+2. A **Dock icon appears** and the **"Sesame" window opens on launch** and comes to the front (a status-bar item is also added as quick-access; clicking it re-focuses the window).
+3. The **Secrets** pane shows a **"Running"** indicator, a search field, and the secrets list (names from service `dev.sesame`, no values) with a "used X ago · requester" line per row, plus reveal/copy and remove.
+4. **Add** a test secret (＋ → name + value) → the list updates. **Reveal/Copy** it → **Touch ID prompt** → approve → the value is on the clipboard (never shown) and the row's "used X ago" refreshes. **Remove** it → **Touch ID prompt** → approve → it's gone.
+5. The **Access Log** pane lists time · secret · requester · result (newest first).
+6. In **Settings**, toggle **Start at login** ON → it reflects `SMAppService` status `enabled` and appears in **System Settings → General → Login Items**. (Launches at login only after the next login/reboot; the first toggle may raise the "Allow in Login Items" prompt — click Allow.)
 
 ### Human-only steps (not automatable)
 
@@ -282,7 +283,7 @@ Listing secret **names needs no Touch ID** (names are not values). Touch ID (via
 
 ## 15 · Milestone 2 · Stage B — Secure-Enclave gate + agent socket + CLI-as-client
 
-Stage B turns the **advisory** gate into a **cryptographic** one and makes the signed menu-bar app the **agent** the `sesame` CLI talks to (the [Secretive](https://github.com/maxgoedjen/secretive) model). Each secret is now **ECIES-wrapped to a Secure-Enclave key** whose private half never leaves the chip and only decrypts after Touch ID — reading the stored blob directly yields ciphertext. **Defaults are unchanged**: a fresh install still behaves exactly like Stage A until you produce a signed build and flip the backend, so nothing regresses.
+Stage B turns the **advisory** gate into a **cryptographic** one and makes the signed windowed app the **agent** the `sesame` CLI talks to (the [Secretive](https://github.com/maxgoedjen/secretive) model). Each secret is now **ECIES-wrapped to a Secure-Enclave key** whose private half never leaves the chip and only decrypts after Touch ID — reading the stored blob directly yields ciphertext. **Defaults are unchanged**: a fresh install still behaves exactly like Stage A until you produce a signed build and flip the backend, so nothing regresses.
 
 ### Architecture
 
