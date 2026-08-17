@@ -552,36 +552,63 @@ struct ShimExec: ParsableCommand {
     /// the tap stays an informed gate even without a pre-approved manifest.
     private func runOpen(commandTokens: [String], realCommand: [String], config: Config) -> Never {
         let wiring = resolveWiring(config: config)
-        let vault = (try? wiring.store.list())?.map { $0.name } ?? []
+        let action = ShimExec.openAction(command: commandTokens, name: name,
+                                         env: ProcessInfo.processInfo.environment,
+                                         store: wiring.store, auth: wiring.auth,
+                                         limiter: RateLimiter(), log: makeLog(),
+                                         requester: Requester.parentName(),
+                                         announce: { Out.err($0) })
+        switch action {
+        case .bare:
+            passthrough(realCommand) // nothing to inject / present / denied → run bare
+        case .inject(let injected):
+            execInjected(realCommand, injected: injected)
+        }
+    }
 
-        let candidates = Providers.resolve(command: commandTokens, vault: vault)
-        if candidates.isEmpty { passthrough(realCommand) } // nothing to inject → bare
+    /// What an OPEN-mode invocation should do, once the (side-effect-free) decision
+    /// is made. Split out so the decision is unit-testable without execve/Keychain.
+    enum OpenAction: Equatable {
+        /// Run the command unchanged — nothing inferred, all inherited, or a
+        /// best-effort release was denied/rate-limited/gone.
+        case bare
+        /// Exec the command with exactly these resolved secrets injected.
+        case inject([String: String])
+    }
+
+    /// The pure decision behind `runOpen`, extracted as a TEST-ONLY seam (no
+    /// behavior change): `runOpen` is now a thin interpreter over this. Same order
+    /// of operations as before — infer candidate secret(s) via the provider map,
+    /// drop any already present+non-empty in `env`, `announce` EXACTLY what is about
+    /// to be released (count + names) BEFORE the gate, then attempt a BEST-EFFORT
+    /// release. Any `SesameError` (denied / rate-limited / missing) yields `.bare`,
+    /// never an error — open mode never breaks the wrapped command.
+    static func openAction(command: [String], name: String, env: [String: String],
+                           store: StorageBackend, auth: Authenticator, limiter: RateLimiter,
+                           log: AccessLog, requester: String?,
+                           announce: (String) -> Void) -> OpenAction {
+        let vault = (try? store.list())?.map { $0.name } ?? []
+
+        let candidates = Providers.resolve(command: command, vault: vault)
+        if candidates.isEmpty { return .bare } // nothing to inject → bare
 
         // Skip any already present + non-empty (inherited); only fetch the rest.
-        let env = ProcessInfo.processInfo.environment
         let needed = candidates.filter { (env[$0] ?? "").isEmpty }
-        if needed.isEmpty { passthrough(realCommand) } // all present → no prompt
+        if needed.isEmpty { return .bare } // all present → no prompt
 
         // Announce EXACTLY what open mode is about to release for this command, so
         // the user sees it before the Touch ID tap and can Deny.
-        Out.err("sesame: open mode — releasing \(needed.count) secret(s) to \(name): \(needed.joined(separator: ", "))")
+        announce("sesame: open mode — releasing \(needed.count) secret(s) to \(name): \(needed.joined(separator: ", "))")
 
-        let log = makeLog()
-        let requester = Requester.parentName()
-
-        let injected: [String: String]
         do {
-            injected = try Resolve.secrets(names: needed, store: wiring.store, auth: wiring.auth,
-                                           limiter: RateLimiter(), log: log, requester: requester,
-                                           op: "run", skipIfPresent: false, env: [:])
-        } catch is SesameError {
-            // Denied / rate-limited / gone: open mode is best-effort → run bare.
-            passthrough(realCommand)
+            let injected = try Resolve.secrets(names: needed, store: store, auth: auth,
+                                               limiter: limiter, log: log, requester: requester,
+                                               op: "run", skipIfPresent: false, env: [:])
+            return .inject(injected)
         } catch {
-            passthrough(realCommand)
+            // Denied / rate-limited / gone: open mode is best-effort → run bare.
+            return .bare
         }
-
-        execInjected(realCommand, injected: injected)
     }
 
     /// Exec the real binary with the resolved secrets injected.

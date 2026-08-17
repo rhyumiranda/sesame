@@ -65,7 +65,13 @@ public enum Providers {
             return mapped.filter { vaultSet.contains($0) }
         }
 
-        // 2. Unknown tool → infer by name: vault secrets that mention the tool.
+        // 2. Unknown tool → infer by name. NOTE (by design, do NOT tighten): this is
+        //    case-insensitive SUBSTRING matching, so it may return MULTIPLE candidates
+        //    — e.g. `git` matches GIT_TOKEN, GITHUB_TOKEN, GITLAB_TOKEN… Open mode is
+        //    intentionally broad; every candidate is surfaced in the Allow prompt and
+        //    each release is gated by an explicit tap, so breadth here never releases
+        //    anything the user didn't see and approve. Multi-key tools (e.g. aws → 2
+        //    keys) rely on this returning more than one name.
         let needle = tool.uppercased()
         let inferred = vault.filter { $0.uppercased().contains(needle) }
         if !inferred.isEmpty { return inferred }
