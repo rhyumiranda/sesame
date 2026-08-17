@@ -48,6 +48,7 @@ Launch your agent the same way (just `claude`, or `canopy start`). You don't wra
 
 - **Your agent never sees Sesame.** The secret goes into the program's environment, not the chat.
 - **One fingerprint per secret, only when it's actually used.** Every request is logged.
+- **Background & headless agents work too.** A request from a tool that isn't the front app brings Sesame forward, shows an **Allow / Deny** prompt naming who's asking and for which key, then takes your tap. Deny releases nothing.
 - **Free, local, no account.** The gate is a courtesy gate today; a hardware-locked (Secure-Enclave) tier and a menu-bar app are optional extras you can build from source.
 - **Already-running or GUI-launched?** The shims won't be on its PATH, so use the fallback: `sesame exec -- <cmd>`.
 

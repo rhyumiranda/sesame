@@ -25,6 +25,16 @@ final class AgentService: ObservableObject {
                                   store: store,
                                   verifier: SecCodePeerVerifier(),
                                   authTimeout: 60)
+
+        // Surface a Touch ID approval for background socket `get`s. Without this
+        // the Enclave decrypt is raised on the socket thread while Sesame is not
+        // frontmost and macOS instant-denies it; the hook brings the app forward,
+        // confirms with the user, and decrypts on the main thread. Core stays
+        // AppKit-free — the UI lives in ReleaseApproval (SesameApp only).
+        self.server.authorizeRelease = { name, requester, release in
+            try ReleaseApproval.confirmAndRelease(name: name, requester: requester,
+                                                  release: release)
+        }
     }
 
     /// Start listening. Failure is surfaced (not fatal) — the menu-bar UI still

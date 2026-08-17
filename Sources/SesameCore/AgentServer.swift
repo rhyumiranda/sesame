@@ -91,6 +91,27 @@ public final class AgentServer {
     /// can't acquire it within `authTimeout` returns `{ok:false,error:"timeout"}`.
     private let gate = DispatchSemaphore(value: 1)
 
+    /// App-injected release authorizer, called INSIDE the serialized gate BEFORE
+    /// the value is released. The app (SesameApp) sets this to bring Sesame
+    /// frontmost, confirm Allow/Deny with the user, and — on Allow — run the
+    /// supplied `release` (the Touch ID-gated decrypt) on the MAIN THREAD while
+    /// the app is active. This matters because a background socket `get` arriving
+    /// while Sesame is not frontmost is INSTANT-denied: macOS won't present Touch
+    /// ID for a decrypt raised off the main thread of a non-frontmost app. The
+    /// known-good in-app reveal path is "main thread + app active", so the app
+    /// replicates exactly that here.
+    ///
+    /// Contract: return the released bytes to proceed; return `nil` to deny (the
+    /// user pressed Deny) → `handleGet` logs `denied` and never releases; rethrow
+    /// `release`'s error to surface the normal wire error (notfound/denied/…).
+    ///
+    /// Default `nil` keeps headless/core behavior: `release` runs inline on the
+    /// socket thread with no prompt, so every existing SesameCore test and the
+    /// CLI-only advisory path are unchanged. SesameCore stays AppKit-free — the
+    /// UI lives entirely in the app-provided closure.
+    public var authorizeRelease: ((_ name: String, _ requester: String,
+                                   _ release: () throws -> Data) throws -> Data?)?
+
     private var listenFD: Int32 = -1
     private var running = false
     private let acceptQueue = DispatchQueue(label: "dev.sesame.agent.accept")
@@ -216,7 +237,23 @@ public final class AgentServer {
         do {
             // The prompt names the VERIFIED peer — signed identifier or unsigned:… flag.
             let reason = "\(peer.signature) wants \(name)"
-            let value = try store.copyValue(name: name, reason: reason)
+            let release = { try self.store.copyValue(name: name, reason: reason) }
+
+            let value: Data
+            if let authorize = authorizeRelease {
+                // App-mediated: bring Sesame frontmost, confirm, decrypt on main.
+                guard let approved = try authorize(name, peer.signature, release) else {
+                    // User pressed Deny — short-circuit before any release.
+                    logEntry(op: "get", name: name, peer: peer, result: "denied")
+                    return AgentResponse(ok: false, error: "denied",
+                                         requesterSignature: peer.signature)
+                }
+                value = approved
+            } else {
+                // Headless/core: no prompt, release inline on the socket thread.
+                value = try release()
+            }
+
             store.recordUse(name: name, by: peer.signature)
             logEntry(op: "get", name: name, peer: peer, result: "ok")
             return AgentResponse(ok: true,
