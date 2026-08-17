@@ -91,7 +91,7 @@ public enum Agents {
     public static func install(in url: URL) throws -> Result {
         let fm = FileManager.default
         let existed = fm.fileExists(atPath: url.path)
-        let existing = existed ? ((try? String(contentsOf: url, encoding: .utf8)) ?? "") : ""
+        let existing = existed ? try String(contentsOf: url, encoding: .utf8) : ""
         let managed = block()
         let updated: String
         let action: String
@@ -124,7 +124,7 @@ public enum Agents {
         guard fm.fileExists(atPath: url.path) else {
             return Result(path: url.path, action: "missing", present: false)
         }
-        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let existing = try String(contentsOf: url, encoding: .utf8)
         let ranges = managedBlockRanges(in: existing)
         guard !ranges.isEmpty else {
             return Result(path: url.path, action: "noop", present: false)
@@ -138,12 +138,12 @@ public enum Agents {
         return Result(path: url.path, action: "uninstalled", present: false)
     }
 
-    public static func doctor(url: URL) -> Result {
+    public static func doctor(url: URL) throws -> Result {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else {
             return Result(path: url.path, action: "missing", present: false)
         }
-        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let existing = try String(contentsOf: url, encoding: .utf8)
         let present = !managedBlockRanges(in: existing).isEmpty
         return Result(path: url.path, action: present ? "present" : "absent", present: present)
     }

@@ -326,7 +326,15 @@ struct AgentsDoctor: ParsableCommand {
     @OptionGroup var common: CommonFlags
 
     func run() throws {
-        let results = agentTargets(scope: targets.scope(json: common.json)).map { Agents.doctor(url: $0) }
+        var results: [Agents.Result] = []
+        for target in agentTargets(scope: targets.scope(json: common.json)) {
+            do {
+                results.append(try Agents.doctor(url: target))
+            } catch {
+                Out.failAndExit(.io("could not read \(target.path): \(error.localizedDescription)"),
+                                json: common.json)
+            }
+        }
         printAgentResults(results, action: "agents-doctor", json: common.json)
     }
 }

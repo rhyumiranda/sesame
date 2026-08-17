@@ -265,6 +265,33 @@ final class AgentsInstructionTests: XCTestCase {
         XCTAssertFalse(text.contains(Agents.startMarker))
     }
 
+    func testInstallThrowsOnInvalidUTF8ExistingFile() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("AGENTS.md")
+        try Data([0xff, 0xfe, 0xfd]).write(to: file)
+
+        XCTAssertThrowsError(try Agents.install(in: file))
+    }
+
+    func testUninstallThrowsOnInvalidUTF8ExistingFile() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("CLAUDE.md")
+        try Data([0xff, 0xfe, 0xfd]).write(to: file)
+
+        XCTAssertThrowsError(try Agents.uninstall(from: file))
+    }
+
+    func testDoctorThrowsOnInvalidUTF8ExistingFile() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("AGENTS.md")
+        try Data([0xff, 0xfe, 0xfd]).write(to: file)
+
+        XCTAssertThrowsError(try Agents.doctor(url: file))
+    }
+
     func testGlobalTargetsReturnKnownPathsWhenUnfiltered() {
         let home = URL(fileURLWithPath: "/tmp/sesame-home")
 
