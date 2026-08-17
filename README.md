@@ -37,6 +37,12 @@ commands **normally** (no wrapping, no prefixes). When something needs a secret,
 Sesame shows you exactly what it's about to release and takes **one Touch ID
 tap** — then injects it. Your thumb is the only gate.
 
+**No terminal?** The desktop app does steps 2 + 3 for you: open **Settings →
+Tap-only injection → Enable** and it installs the shims, turns on tap-only mode,
+and adds the shims dir to your PATH (open a new terminal for the PATH change to
+land). The same panel shows the current state and a **Turn off** button that
+reverses all three. It needs the `sesame` CLI installed (the shims call it).
+
 ## Example
 
 ```sh
