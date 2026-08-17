@@ -26,7 +26,7 @@ BUNDLE_ID="dev.sesame.app"
 EXECUTABLE="Sesame"          # CFBundleExecutable — the binary name inside MacOS/
 PRODUCT="SesameApp"          # the SwiftPM executable target/product name
 MIN_MACOS="13.0"
-VERSION="0.5.0"              # x-release-please-version
+VERSION="0.5.1"              # x-release-please-version
 ENTITLEMENTS="Sesame.entitlements"
 
 # Repo root = parent of this script's dir (works from any CWD).
