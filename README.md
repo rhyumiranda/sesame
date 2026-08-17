@@ -62,6 +62,27 @@ sesame run OPENAI_API_KEY -- python train.py   # tap → OPENAI_API_KEY injected
 sesame get OPENAI_API_KEY                       # tap → prints the bare value on stdout
 ```
 
+## Wire agent secret lookup rules
+
+`sesame agents` adds a managed instruction block to Codex/Claude files so agents
+know how to ask Sesame for secrets without leaking values.
+
+```sh
+sesame agents install          # installed global agent dirs only
+sesame agents install --project # git repo root AGENTS.md
+sesame agents install --all     # installed globals + repo root AGENTS.md
+sesame agents doctor --json
+sesame agents uninstall
+```
+
+The block is bounded by `<!-- sesame-agents:start -->` and
+`<!-- sesame-agents:end -->`. Re-running updates that one block, never duplicates
+it; uninstall removes only that block. By default, global commands touch only
+known installed agent locations (`~/.codex/AGENTS.md` or `~/.claude/CLAUDE.md`
+when that file or parent agent dir exists), so Sesame does not create both global
+files on a fresh machine. JSON output reports paths and actions, never secret
+values.
+
 ## How a key reaches a command
 
 **The tap is the only action.** After `sesame open`, a shimmed command needs no

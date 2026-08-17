@@ -222,6 +222,123 @@ struct Init: ParsableCommand {
     }
 }
 
+// MARK: - agents
+
+struct AgentTargetFlags: ParsableArguments {
+    @Flag(name: .customLong("project"), help: "Target only the current repo AGENTS.md.")
+    var project = false
+
+    @Flag(name: .customLong("all"), help: "Target global agent files plus the current repo AGENTS.md.")
+    var all = false
+
+    func scope(json: Bool) -> Agents.TargetScope {
+        if project && all {
+            Out.failAndExit(message: "use only one target flag: --project or --all",
+                            code: 2, json: json)
+        }
+        if all { return .all }
+        if project { return .project }
+        return .global
+    }
+}
+
+struct AgentsCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "agents",
+        abstract: "Install Sesame secret lookup rules into Codex/Claude agent instruction files.",
+        subcommands: [AgentsInstall.self, AgentsUninstall.self, AgentsDoctor.self]
+    )
+}
+
+private func agentTargets(scope: Agents.TargetScope) -> [URL] {
+    Agents.targets(scope: scope,
+                   home: URL(fileURLWithPath: NSHomeDirectory()),
+                   cwd: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+}
+
+private func printAgentResults(_ results: [Agents.Result], action: String, json: Bool) {
+    if json {
+        let touched = results.map { ["path": $0.path, "action": $0.action, "present": $0.present] as [String: Any] }
+        Out.line(Out.json(["ok": true, "action": action, "touched": touched]))
+        return
+    }
+    if results.isEmpty {
+        Out.line("targets[0]: none")
+        return
+    }
+    let rows = results.map { [$0.path, $0.action, $0.present ? "yes" : "no"] }
+    Out.line(toonRows("targets", fields: ["path", "action", "present"], rows: rows))
+}
+
+struct AgentsInstall: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "install",
+        abstract: "Add/update Sesame managed secret lookup rules in agent instruction files."
+    )
+
+    @OptionGroup var targets: AgentTargetFlags
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        var results: [Agents.Result] = []
+        for target in agentTargets(scope: targets.scope(json: common.json)) {
+            do {
+                results.append(try Agents.install(in: target))
+            } catch {
+                Out.failAndExit(.io("could not update \(target.path): \(error.localizedDescription)"),
+                                json: common.json)
+            }
+        }
+        printAgentResults(results, action: "agents-install", json: common.json)
+    }
+}
+
+struct AgentsUninstall: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "uninstall",
+        abstract: "Remove only Sesame's managed agent instruction block."
+    )
+
+    @OptionGroup var targets: AgentTargetFlags
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        var results: [Agents.Result] = []
+        for target in agentTargets(scope: targets.scope(json: common.json)) {
+            do {
+                results.append(try Agents.uninstall(from: target))
+            } catch {
+                Out.failAndExit(.io("could not update \(target.path): \(error.localizedDescription)"),
+                                json: common.json)
+            }
+        }
+        printAgentResults(results, action: "agents-uninstall", json: common.json)
+    }
+}
+
+struct AgentsDoctor: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "doctor",
+        abstract: "Report where Sesame agent instruction rules are installed."
+    )
+
+    @OptionGroup var targets: AgentTargetFlags
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        var results: [Agents.Result] = []
+        for target in agentTargets(scope: targets.scope(json: common.json)) {
+            do {
+                results.append(try Agents.doctor(url: target))
+            } catch {
+                Out.failAndExit(.io("could not read \(target.path): \(error.localizedDescription)"),
+                                json: common.json)
+            }
+        }
+        printAgentResults(results, action: "agents-doctor", json: common.json)
+    }
+}
+
 // MARK: - shim (group)
 
 /// Write executable shims for `names` into `shimsDir`, resolving each against the
