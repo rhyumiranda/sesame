@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/rhyumiranda/sesame/compare/v0.6.0...v0.7.0) (2026-08-17)
+
+
+### Features
+
+* **open-mode:** allowlist-free tap-only key access (sesame open) + README + tests ([#29](https://github.com/rhyumiranda/sesame/issues/29)) ([e31c110](https://github.com/rhyumiranda/sesame/commit/e31c1103ad264bf86b9297d0e4a05047dbaee408))
+
 ## [0.6.0](https://github.com/rhyumiranda/sesame/compare/v0.5.1...v0.6.0) (2026-08-17)
 
 
