@@ -88,7 +88,7 @@ struct Sesame: ParsableCommand {
         version: "sesame \(sesameVersion)",
         subcommands: [Add.self, Get.self, Run.self, Exec.self, List.self, Remove.self, Log.self,
                       Migrate.self, Export.self, Import.self,
-                      Setup.self, Init.self, Shim.self, ShimExec.self]
+                      Setup.self, Init.self, Open.self, Shim.self, ShimExec.self]
     )
 
     @Flag(name: .customShort("v"), help: "Print the version.")
