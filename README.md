@@ -62,6 +62,24 @@ sesame run OPENAI_API_KEY -- python train.py   # tap → OPENAI_API_KEY injected
 sesame get OPENAI_API_KEY                       # tap → prints the bare value on stdout
 ```
 
+## Wire agent secret lookup rules
+
+`sesame agents` adds a managed instruction block to Codex/Claude files so agents
+know how to ask Sesame for secrets without leaking values.
+
+```sh
+sesame agents install          # ~/.codex/AGENTS.md + ~/.claude/CLAUDE.md
+sesame agents install --project
+sesame agents install --all
+sesame agents doctor --json
+sesame agents uninstall
+```
+
+The block is bounded by `<!-- sesame-agents:start -->` and
+`<!-- sesame-agents:end -->`. Re-running updates that one block, never duplicates
+it; uninstall removes only that block. JSON output reports paths and actions,
+never secret values.
+
 ## How a key reaches a command
 
 **The tap is the only action.** After `sesame open`, a shimmed command needs no

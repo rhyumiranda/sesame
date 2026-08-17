@@ -61,7 +61,7 @@ struct CommonFlags: ParsableArguments {
 
 // MARK: - TOON rendering helpers
 
-private func toonRows(_ header: String, fields: [String], rows: [[String]]) -> String {
+func toonRows(_ header: String, fields: [String], rows: [[String]]) -> String {
     var lines = ["\(header)[\(rows.count)]{\(fields.joined(separator: ","))}:"]
     for row in rows {
         lines.append("  " + row.joined(separator: "  "))
@@ -88,7 +88,7 @@ struct Sesame: ParsableCommand {
         version: "sesame \(sesameVersion)",
         subcommands: [Add.self, Get.self, Run.self, Exec.self, List.self, Remove.self, Log.self,
                       Migrate.self, Export.self, Import.self,
-                      Setup.self, Init.self, Open.self, Shim.self, ShimExec.self]
+                      Setup.self, Init.self, AgentsCommand.self, Open.self, Shim.self, ShimExec.self]
     )
 
     @Flag(name: .customShort("v"), help: "Print the version.")

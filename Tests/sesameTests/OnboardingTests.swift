@@ -152,3 +152,131 @@ final class InitCommandTests: XCTestCase {
         XCTAssertTrue(text.contains("[commands]"), "template shows a commented [commands] example")
     }
 }
+
+// MARK: - `sesame agents` instruction wiring
+
+final class AgentsInstructionTests: XCTestCase {
+    private func tempDir() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sesame-agents-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func testBlockContainsRequiredAgentRulesAndProviderNames() {
+        let block = Agents.block()
+        XCTAssertTrue(block.contains(Agents.startMarker))
+        XCTAssertTrue(block.contains(Agents.endMarker))
+        XCTAssertTrue(block.contains("Check the environment first"))
+        XCTAssertTrue(block.contains("run `sesame ls`"))
+        XCTAssertTrue(block.contains("`sesame get NAME`"))
+        XCTAssertTrue(block.contains("`sesame run NAME -- <cmd>`"))
+        XCTAssertTrue(block.contains("doctl: DIGITALOCEAN_ACCESS_TOKEN"))
+        XCTAssertTrue(block.contains("supabase: SUPABASE_ACCESS_TOKEN"))
+        XCTAssertTrue(block.contains("Never print secret values unless the user explicitly asks"))
+        XCTAssertTrue(block.contains("Distinguish \"env unset\" from \"vault missing\""))
+    }
+
+    func testInstallCreatesAndIsIdempotent() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("AGENTS.md")
+
+        let first = try Agents.install(in: file)
+        XCTAssertEqual(first.action, "created")
+
+        let second = try Agents.install(in: file)
+        XCTAssertEqual(second.action, "noop")
+
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertEqual(text.components(separatedBy: Agents.startMarker).count - 1, 1)
+        XCTAssertEqual(text.components(separatedBy: Agents.endMarker).count - 1, 1)
+    }
+
+    func testInstallUpdatesOneManagedBlockWithoutDuplicating() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("AGENTS.md")
+        try """
+        # Existing
+
+        \(Agents.startMarker)
+        stale
+        \(Agents.endMarker)
+
+        keep me
+        """.write(to: file, atomically: true, encoding: .utf8)
+
+        let result = try Agents.install(in: file)
+        XCTAssertEqual(result.action, "updated")
+
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertFalse(text.contains("stale"))
+        XCTAssertTrue(text.contains("keep me"))
+        XCTAssertEqual(text.components(separatedBy: Agents.startMarker).count - 1, 1)
+    }
+
+    func testInstallCollapsesDuplicateManagedBlocks() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("AGENTS.md")
+        try """
+        top
+        \(Agents.startMarker)
+        stale one
+        \(Agents.endMarker)
+        middle
+        \(Agents.startMarker)
+        stale two
+        \(Agents.endMarker)
+        bottom
+        """.write(to: file, atomically: true, encoding: .utf8)
+
+        let result = try Agents.install(in: file)
+        XCTAssertEqual(result.action, "updated")
+
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains("top"))
+        XCTAssertTrue(text.contains("middle"))
+        XCTAssertTrue(text.contains("bottom"))
+        XCTAssertFalse(text.contains("stale one"))
+        XCTAssertFalse(text.contains("stale two"))
+        XCTAssertEqual(text.components(separatedBy: Agents.startMarker).count - 1, 1)
+    }
+
+    func testUninstallRemovesOnlyManagedBlock() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("CLAUDE.md")
+        try """
+        before
+
+        \(Agents.block())
+
+        after
+        """.write(to: file, atomically: true, encoding: .utf8)
+
+        let result = try Agents.uninstall(from: file)
+        XCTAssertEqual(result.action, "uninstalled")
+
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains("before"))
+        XCTAssertTrue(text.contains("after"))
+        XCTAssertFalse(text.contains(Agents.startMarker))
+    }
+
+    func testTargetsUseGlobalProjectAndAll() throws {
+        let home = URL(fileURLWithPath: "/tmp/sesame-home")
+        let cwd = URL(fileURLWithPath: "/tmp/sesame-project")
+
+        XCTAssertEqual(Agents.targets(scope: .global, home: home, cwd: cwd).map(\.path),
+                       ["/tmp/sesame-home/.codex/AGENTS.md",
+                        "/tmp/sesame-home/.claude/CLAUDE.md"])
+        XCTAssertEqual(Agents.targets(scope: .project, home: home, cwd: cwd).map(\.path),
+                       ["/tmp/sesame-project/AGENTS.md"])
+        XCTAssertEqual(Agents.targets(scope: .all, home: home, cwd: cwd).map(\.path),
+                       ["/tmp/sesame-home/.codex/AGENTS.md",
+                        "/tmp/sesame-home/.claude/CLAUDE.md",
+                        "/tmp/sesame-project/AGENTS.md"])
+    }
+}
