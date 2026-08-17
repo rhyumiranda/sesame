@@ -83,6 +83,12 @@ when that file or parent agent dir exists), so Sesame does not create both globa
 files on a fresh machine. JSON output reports paths and actions, never secret
 values.
 
+Installed rules treat a direct request to access, retrieve, get, show, print, or
+reveal a named Sesame secret as value reveal intent. The agent should run
+`sesame get NAME`, let Sesame request your fingerprint/unlock, then print the
+value after unlock. For command-use requests, agents should prefer
+`sesame run NAME -- <cmd>` so the value is injected without being shown.
+
 ## How a key reaches a command
 
 **The tap is the only action.** After `sesame open`, a shimmed command needs no

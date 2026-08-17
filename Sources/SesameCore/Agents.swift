@@ -77,11 +77,11 @@ public enum Agents {
 
         - Check the environment first. If the needed env var is set and non-empty, use it.
         - If the env var is unset and `sesame` exists on PATH, run `sesame ls` to see stored secret names.
-        - For an exact secret-name match, use `sesame get NAME` only when the user explicitly asks to see the value.
-        - Prefer `sesame run NAME -- <cmd>` to run a command with one named secret injected.
+        - For an exact secret-name match, use `sesame get NAME` when the user asks to access, retrieve, get, show, print, or reveal that secret from Sesame; those words mean value reveal. Let Sesame request the fingerprint/unlock through its own flow; do not ask the user to restate permission first.
+        - Prefer `sesame run NAME -- <cmd>` only when the user asks to run/use a command with the secret without showing it.
         - For known tools, infer the provider env names from Sesame's provider map:
         \(providerRows)
-        - Never print secret values unless the user explicitly asks.
+        - Never print secret values for vague command-use requests. If the user asks to access/retrieve/get/show/print/reveal a named secret from Sesame, that is explicit enough to run `sesame get NAME`, let Sesame request fingerprint/unlock, then print it after unlock.
         - Distinguish "env unset" from "vault missing": unset means check Sesame; missing means ask the user to add it with `sesame add NAME`.
         \(endMarker)
         """

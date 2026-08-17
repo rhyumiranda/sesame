@@ -173,7 +173,9 @@ final class AgentsInstructionTests: XCTestCase {
         XCTAssertTrue(block.contains("`sesame run NAME -- <cmd>`"))
         XCTAssertTrue(block.contains("doctl: DIGITALOCEAN_ACCESS_TOKEN"))
         XCTAssertTrue(block.contains("supabase: SUPABASE_ACCESS_TOKEN"))
-        XCTAssertTrue(block.contains("Never print secret values unless the user explicitly asks"))
+        XCTAssertTrue(block.contains("Let Sesame request the fingerprint/unlock"))
+        XCTAssertTrue(block.contains("do not ask the user to restate permission first"))
+        XCTAssertTrue(block.contains("Never print secret values for vague command-use requests"))
         XCTAssertTrue(block.contains("Distinguish \"env unset\" from \"vault missing\""))
     }
 
