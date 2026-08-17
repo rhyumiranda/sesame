@@ -2,6 +2,7 @@ import Foundation
 
 public enum Telemetry {
     private static let defaultHost = "https://telemetry-umami.vercel.app"
+    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     private static var cliStart = Date()
     private static var cliVersion = "dev"
     private static var cliCommand = "dashboard"
@@ -65,6 +66,7 @@ public enum Telemetry {
             "payload": [
                 "website": website,
                 "hostname": "cli",
+                "userAgent": userAgent,
                 "url": path,
                 "title": tool,
                 "name": name,
@@ -79,7 +81,7 @@ public enum Telemetry {
         request.timeoutInterval = 1
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("\(tool)/\(version)", forHTTPHeaderField: "User-Agent")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         let semaphore = DispatchSemaphore(value: 0)
         URLSession.shared.dataTask(with: request) { _, _, _ in
