@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/rhyumiranda/sesame/compare/v0.7.0...v0.7.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **agents:** reveal sesame secrets on access intent ([88f3c3d](https://github.com/rhyumiranda/sesame/commit/88f3c3da5a92153289baa88dcaf1e2ce030a52aa))
+* **cli:** preserve unreadable agent files ([#33](https://github.com/rhyumiranda/sesame/issues/33)) ([116c9a9](https://github.com/rhyumiranda/sesame/commit/116c9a9ad707f1292ca2ca1b14307721d066ff2b))
+* **release:** attach versioned app dmg ([#35](https://github.com/rhyumiranda/sesame/issues/35)) ([6f9a43e](https://github.com/rhyumiranda/sesame/commit/6f9a43e73845ae90d1c2bf0aea68f029ce27f383))
+
 ## [0.7.0](https://github.com/rhyumiranda/sesame/compare/v0.6.0...v0.7.0) (2026-08-17)
 
 
