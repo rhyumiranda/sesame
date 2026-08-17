@@ -112,7 +112,7 @@ codesign -dv "$STAGE_APP" 2>&1 | sed 's/^/    /'
 # Install to ~/Applications (SMAppService discovers mainApp login items
 # reliably only in ~/Applications or /Applications — a .app left in .build/
 # will NOT auto-launch at login).
-DEST_DIR="$HOME/Applications"
+DEST_DIR="${SESAME_DEST_DIR:-$HOME/Applications}"
 DEST_APP="$DEST_DIR/$APP_NAME.app"
 mkdir -p "$DEST_DIR"
 echo "==> install -> $DEST_APP"
