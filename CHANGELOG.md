@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/rhyumiranda/sesame/compare/v0.5.0...v0.5.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **app:** surface Touch ID approval for background socket get requests ([#25](https://github.com/rhyumiranda/sesame/issues/25)) ([510f645](https://github.com/rhyumiranda/sesame/commit/510f6456b921d427a3e4fc777d2ed67b6759a4ac))
+
 ## [0.5.0](https://github.com/rhyumiranda/sesame/compare/v0.4.0...v0.5.0) (2026-08-16)
 
 
