@@ -449,6 +449,30 @@ final class ConfigWiringTests: XCTestCase {
         XCTAssertEqual(loaded.dataSource, .agent)
     }
 
+    func testAccessDefaultsToAllowlist() {
+        XCTAssertEqual(Config().access, .allowlist, "default access is the safe allowlist")
+    }
+
+    func testOldConfigWithoutAccessKeyDefaultsToAllowlist() throws {
+        // A pre-open-mode config.json (no `access` key) must decode as allowlist.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cfg-\(UUID().uuidString.prefix(8))").appendingPathComponent("config.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"storage_backend":"advisory","data_source":"agent"}"#.utf8).write(to: url)
+        XCTAssertEqual(Config.load(url: url).access, .allowlist)
+    }
+
+    func testAccessRoundTripsOpen() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cfg-\(UUID().uuidString.prefix(8))").appendingPathComponent("config.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var cfg = Config()
+        cfg.access = .open
+        try cfg.save(url: url)
+        XCTAssertEqual(Config.load(url: url).access, .open)
+    }
+
     func testWiringFailsSafeToAdvisoryWhenAgentDown() {
         var cfg = Config()
         cfg.agentSocket = tempSocketPath() // nothing listening

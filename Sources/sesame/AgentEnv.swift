@@ -224,6 +224,97 @@ struct Init: ParsableCommand {
 
 // MARK: - shim (group)
 
+/// Write executable shims for `names` into `shimsDir`, resolving each command's
+/// REAL binary on PATH (excluding the shims dir, so no recursion). A command not
+/// on PATH or that fails to write is SKIPPED with a reason — never fatal. Shared
+/// by `shim install` and `open`.
+func installShims(_ names: [String], into shimsDir: URL)
+    -> (installed: [String], skipped: [(name: String, reason: String)]) {
+    let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let sesamePath = currentSesamePath()
+    var installed: [String] = []
+    var skipped: [(name: String, reason: String)] = []
+    for name in names {
+        guard let real = Shims.resolveRealBinary(name, path: path, excluding: shimsDir.path) else {
+            skipped.append((name, "not found on PATH"))
+            continue
+        }
+        let script = Shims.render(name: name, realPath: real, sesamePath: sesamePath)
+        let file = shimsDir.appendingPathComponent(name)
+        do {
+            try script.write(to: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        } catch {
+            skipped.append((name, "write failed: \(error.localizedDescription)"))
+            continue
+        }
+        installed.append(name)
+    }
+    return (installed, skipped)
+}
+
+// MARK: - open (toggle the access mode)
+
+struct Open: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "open",
+        abstract: "Switch to open mode: any shimmed command gets its secret on a single Touch ID tap — no .sesame allowlist.",
+        discussion: """
+        Sets access = open in the HOME config (set once, applies everywhere) and \
+        installs shims for the built-in provider-map tools found on PATH, so a \
+        shimmed command with NO .sesame mapping resolves the secret(s) it needs, \
+        shows them in the Allow prompt, and injects them on one tap. Add a custom \
+        tool with 'sesame shim install --commands <tool>'. Run 'sesame open --off' \
+        to return to the default allowlist. You accept that a tap releases whatever \
+        the command is shown to need — the prompt is the gate.
+        """
+    )
+
+    @Flag(name: .customLong("off"), help: "Return to the default allowlist mode (leaves installed shims in place).")
+    var off = false
+
+    @OptionGroup var common: CommonFlags
+
+    func run() throws {
+        var config = Config.load()
+        config.access = off ? .allowlist : .open
+        do {
+            try config.save()
+        } catch {
+            Out.failAndExit(.io("could not write config: \(error.localizedDescription)"), json: common.json)
+        }
+
+        if off {
+            if common.json {
+                Out.line(Out.json(["ok": true, "action": "open", "access": "allowlist"]))
+            } else {
+                Out.line("ok: back to allowlist mode — commands get only their .sesame-mapped secrets.")
+            }
+            return
+        }
+
+        // Enabling open mode → make the shims exist so "only thumb" holds at runtime.
+        let shimsDir = Shims.dir()
+        try? FileManager.default.createDirectory(at: shimsDir, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o755])
+        let (installed, skipped) = installShims(Providers.knownCommands, into: shimsDir)
+
+        if common.json {
+            Out.line(Out.json(["ok": true, "action": "open", "access": "open",
+                               "installed": installed,
+                               "skipped": skipped.map { ["name": $0.name, "reason": $0.reason] },
+                               "dir": shimsDir.path]))
+            return
+        }
+        Out.line("ok: open mode on — a tap releases whatever a shimmed command needs (no .sesame).")
+        Out.line("shims[\(installed.count)]: \(installed.joined(separator: " "))")
+        Out.line("dir: \(shimsDir.path)")
+        Out.line("next: ensure the shims dir is on PATH (also in your agent's env) — 'sesame setup' wires it:")
+        Out.line("  export PATH=\"\(shimsDir.path):$PATH\"")
+        Out.line("help[1]: custom tool? 'sesame shim install --commands <tool>' · turn off with 'sesame open --off'")
+    }
+}
+
 struct Shim: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "shim",
@@ -250,6 +341,10 @@ struct ShimInstall: ParsableCommand {
             help: "Comma-separated commands to shim (e.g. npm,gh). Default: the commands mapped in .sesame.")
     var commands: String?
 
+    @Flag(name: .customLong("known"),
+          help: "Shim every built-in provider-map tool found on PATH (for open mode); no .sesame needed.")
+    var known = false
+
     @OptionGroup var common: CommonFlags
 
     func run() throws {
@@ -257,7 +352,11 @@ struct ShimInstall: ParsableCommand {
 
         // Which commands to wrap.
         var names: [String]
-        if let raw = commands {
+        if known {
+            // Open mode: shim the tools Sesame can resolve without a manifest.
+            // Absent-on-PATH ones are simply skipped below (never an error).
+            names = Providers.knownCommands
+        } else if let raw = commands {
             names = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             guard !names.isEmpty else {
                 Out.failAndExit(.io("--commands was empty — e.g. --commands npm,gh"), json: common.json)
@@ -288,27 +387,7 @@ struct ShimInstall: ParsableCommand {
             Out.failAndExit(.io("could not create \(shimsDir.path): \(error.localizedDescription)"), json: common.json)
         }
 
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let sesamePath = currentSesamePath()
-        var installed: [String] = []
-        var skipped: [(name: String, reason: String)] = []
-
-        for name in names {
-            guard let real = Shims.resolveRealBinary(name, path: path, excluding: shimsDir.path) else {
-                skipped.append((name, "not found on PATH"))
-                continue
-            }
-            let script = Shims.render(name: name, realPath: real, sesamePath: sesamePath)
-            let file = shimsDir.appendingPathComponent(name)
-            do {
-                try script.write(to: file, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
-            } catch {
-                skipped.append((name, "write failed: \(error.localizedDescription)"))
-                continue
-            }
-            installed.append(name)
-        }
+        let (installed, skipped) = installShims(names, into: shimsDir)
 
         if common.json {
             Out.line(Out.json(["ok": true, "action": "shim-install",
@@ -400,28 +479,48 @@ struct ShimExec: ParsableCommand {
         let realCommand = [real] + args
         let commandTokens = [name] + args
 
-        // No manifest anywhere → run unchanged (fail-safe, no prompt).
-        guard let manifestURL = Manifest.find() else { passthrough(realCommand) }
+        let config = Config.load()
+        let openMode = (config.access == .open)
 
-        let manifest: Manifest
-        do {
-            let text = (try? String(contentsOf: manifestURL, encoding: .utf8)) ?? ""
-            manifest = try Manifest.parse(text, path: manifestURL)
-        } catch let error as ManifestError {
-            // Never break the wrapped command on a bad manifest — warn + passthrough.
-            Out.err("sesame: warning: \(error.message) — running \(name) without injection")
+        // Parse the nearest manifest if there is one. A bad manifest never breaks
+        // the wrapped command — warn + passthrough.
+        var manifest: Manifest?
+        if let manifestURL = Manifest.find() {
+            do {
+                let text = (try? String(contentsOf: manifestURL, encoding: .utf8)) ?? ""
+                manifest = try Manifest.parse(text, path: manifestURL)
+            } catch let error as ManifestError {
+                Out.err("sesame: warning: \(error.message) — running \(name) without injection")
+                passthrough(realCommand)
+            }
+        } else if !openMode {
+            // Allowlist mode with no manifest → run unchanged (fail-safe, no prompt).
             passthrough(realCommand)
         }
 
-        let mapped = manifest.secrets(forCommand: commandTokens)
-        if mapped.isEmpty { passthrough(realCommand) } // unmapped → no prompt
+        let mapped = manifest?.secrets(forCommand: commandTokens) ?? []
+        if !mapped.isEmpty {
+            // An explicit [commands] rule always wins — today's allowlist path,
+            // byte-for-byte unchanged in either mode.
+            runAllowlist(mapped: mapped, realCommand: realCommand, config: config)
+        } else if openMode {
+            // No rule + open mode → resolve the likely secret(s) ourselves.
+            runOpen(commandTokens: commandTokens, realCommand: realCommand, config: config)
+        } else {
+            passthrough(realCommand) // unmapped, allowlist → no prompt
+        }
+    }
 
+    /// The allowlist path: an explicit `[commands]` rule mapped these secrets.
+    /// Behavior is exactly as before open mode existed — a missing/denied secret
+    /// stops the command (the rule declared it required).
+    private func runAllowlist(mapped: [String], realCommand: [String], config: Config) -> Never {
         // Skip any already present + non-empty (inherited); only fetch the rest.
         let env = ProcessInfo.processInfo.environment
         let needed = mapped.filter { (env[$0] ?? "").isEmpty }
         if needed.isEmpty { passthrough(realCommand) } // all present → no prompt
 
-        let wiring = resolveWiring()
+        let wiring = resolveWiring(config: config)
         let log = makeLog()
         let requester = Requester.parentName()
 
@@ -439,8 +538,81 @@ struct ShimExec: ParsableCommand {
                                            op: "run", skipIfPresent: false, env: [:])
         } catch let error as SesameError {
             Out.failAndExit(error, json: false)
+        } catch {
+            Out.failAndExit(.io(error.localizedDescription), json: false)
         }
 
+        execInjected(realCommand, injected: injected)
+    }
+
+    /// The open-mode path: no `[commands]` rule, so infer the secret(s) via the
+    /// built-in provider map (else name-inference, else the full vault). Resolution
+    /// is BEST-EFFORT — a denied/failed release never breaks the command, it just
+    /// runs bare. Every name about to be released is announced (count + names) so
+    /// the tap stays an informed gate even without a pre-approved manifest.
+    private func runOpen(commandTokens: [String], realCommand: [String], config: Config) -> Never {
+        let wiring = resolveWiring(config: config)
+        let action = ShimExec.openAction(command: commandTokens, name: name,
+                                         env: ProcessInfo.processInfo.environment,
+                                         store: wiring.store, auth: wiring.auth,
+                                         limiter: RateLimiter(), log: makeLog(),
+                                         requester: Requester.parentName(),
+                                         announce: { Out.err($0) })
+        switch action {
+        case .bare:
+            passthrough(realCommand) // nothing to inject / present / denied → run bare
+        case .inject(let injected):
+            execInjected(realCommand, injected: injected)
+        }
+    }
+
+    /// What an OPEN-mode invocation should do, once the (side-effect-free) decision
+    /// is made. Split out so the decision is unit-testable without execve/Keychain.
+    enum OpenAction: Equatable {
+        /// Run the command unchanged — nothing inferred, all inherited, or a
+        /// best-effort release was denied/rate-limited/gone.
+        case bare
+        /// Exec the command with exactly these resolved secrets injected.
+        case inject([String: String])
+    }
+
+    /// The pure decision behind `runOpen`, extracted as a TEST-ONLY seam (no
+    /// behavior change): `runOpen` is now a thin interpreter over this. Same order
+    /// of operations as before — infer candidate secret(s) via the provider map,
+    /// drop any already present+non-empty in `env`, `announce` EXACTLY what is about
+    /// to be released (count + names) BEFORE the gate, then attempt a BEST-EFFORT
+    /// release. Any `SesameError` (denied / rate-limited / missing) yields `.bare`,
+    /// never an error — open mode never breaks the wrapped command.
+    static func openAction(command: [String], name: String, env: [String: String],
+                           store: StorageBackend, auth: Authenticator, limiter: RateLimiter,
+                           log: AccessLog, requester: String?,
+                           announce: (String) -> Void) -> OpenAction {
+        let vault = (try? store.list())?.map { $0.name } ?? []
+
+        let candidates = Providers.resolve(command: command, vault: vault)
+        if candidates.isEmpty { return .bare } // nothing to inject → bare
+
+        // Skip any already present + non-empty (inherited); only fetch the rest.
+        let needed = candidates.filter { (env[$0] ?? "").isEmpty }
+        if needed.isEmpty { return .bare } // all present → no prompt
+
+        // Announce EXACTLY what open mode is about to release for this command, so
+        // the user sees it before the Touch ID tap and can Deny.
+        announce("sesame: open mode — releasing \(needed.count) secret(s) to \(name): \(needed.joined(separator: ", "))")
+
+        do {
+            let injected = try Resolve.secrets(names: needed, store: store, auth: auth,
+                                               limiter: limiter, log: log, requester: requester,
+                                               op: "run", skipIfPresent: false, env: [:])
+            return .inject(injected)
+        } catch {
+            // Denied / rate-limited / gone: open mode is best-effort → run bare.
+            return .bare
+        }
+    }
+
+    /// Exec the real binary with the resolved secrets injected.
+    private func execInjected(_ realCommand: [String], injected: [String: String]) -> Never {
         do {
             try Runner.exec(command: realCommand, secrets: injected)
         } catch let error as SesameError {
