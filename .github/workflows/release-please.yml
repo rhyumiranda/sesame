@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     env:
       # Mapped to env so it can be referenced in step `if:` (the `secrets` context
       # is not allowed directly in `if`). Empty when the PAT isn't configured.
@@ -37,6 +37,19 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Build versioned DMG
+        if: ${{ steps.release.outputs.release_created }}
+        run: scripts/package-dmg.sh "${{ steps.release.outputs.version }}"
+
+      - name: Upload versioned DMG
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+        run: gh release upload "${{ steps.release.outputs.tag_name }}" "dist/Sesame-${{ steps.release.outputs.version }}.dmg" --clobber
 
       # Turn on GitHub auto-merge for the open release PR. It merges itself once CI
       # is green. Only runs when a release PR exists AND the PAT is configured (so
