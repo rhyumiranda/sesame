@@ -23,23 +23,43 @@ public struct Config: Codable, Equatable, Sendable {
         case local
     }
 
+    /// How a shimmed command decides WHICH secrets it may release.
+    ///
+    /// - `allowlist` (DEFAULT, unchanged for everyone): a command gets ONLY the
+    ///   secrets its nearest `.sesame` `[commands]` rule maps; no rule → nothing
+    ///   injected, the command runs bare. This is the safe, explicit model.
+    /// - `open` (explicit opt-in, set once in the HOME config): drop the per-secret
+    ///   allowlist. When no `[commands]` rule maps, Sesame resolves the likely
+    ///   secret(s) itself (built-in provider map, else a vault fallback), shows
+    ///   exactly what is about to be released in the Allow prompt, and one Touch ID
+    ///   tap releases them. The user accepts the security tradeoff of no allowlist.
+    public enum Access: String, Codable, Sendable {
+        case allowlist
+        case open
+    }
+
     public var storageBackend: Backend
     public var dataSource: Source
     /// Agent listen/connect socket path. Absolute; `~` is expanded on load.
     public var agentSocket: String
+    /// The secret-release model for shimmed commands. Defaults to `.allowlist`.
+    public var access: Access
 
     public init(storageBackend: Backend = .advisory,
                 dataSource: Source = .agent,
-                agentSocket: String = Paths.agentSocket().path) {
+                agentSocket: String = Paths.agentSocket().path,
+                access: Access = .allowlist) {
         self.storageBackend = storageBackend
         self.dataSource = dataSource
         self.agentSocket = agentSocket
+        self.access = access
     }
 
     private enum CodingKeys: String, CodingKey {
         case storageBackend = "storage_backend"
         case dataSource = "data_source"
         case agentSocket = "agent_socket"
+        case access = "access"
     }
 
     /// Decode leniently: any missing key falls back to its safe default, so an
@@ -51,6 +71,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.dataSource = (try? c.decodeIfPresent(Source.self, forKey: .dataSource)) ?? def.dataSource
         let sock = (try? c.decodeIfPresent(String.self, forKey: .agentSocket)) ?? def.agentSocket
         self.agentSocket = Config.expandTilde(sock)
+        self.access = (try? c.decodeIfPresent(Access.self, forKey: .access)) ?? def.access
     }
 
     /// Load from `config.json`, or return defaults if it is absent/unreadable.
