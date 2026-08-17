@@ -265,18 +265,76 @@ final class AgentsInstructionTests: XCTestCase {
         XCTAssertFalse(text.contains(Agents.startMarker))
     }
 
-    func testTargetsUseGlobalProjectAndAll() throws {
+    func testGlobalTargetsReturnKnownPathsWhenUnfiltered() {
         let home = URL(fileURLWithPath: "/tmp/sesame-home")
-        let cwd = URL(fileURLWithPath: "/tmp/sesame-project")
 
-        XCTAssertEqual(Agents.targets(scope: .global, home: home, cwd: cwd).map(\.path),
+        XCTAssertEqual(Agents.globalTargets(home: home, installedOnly: false).map(\.path),
                        ["/tmp/sesame-home/.codex/AGENTS.md",
                         "/tmp/sesame-home/.claude/CLAUDE.md"])
-        XCTAssertEqual(Agents.targets(scope: .project, home: home, cwd: cwd).map(\.path),
-                       ["/tmp/sesame-project/AGENTS.md"])
-        XCTAssertEqual(Agents.targets(scope: .all, home: home, cwd: cwd).map(\.path),
-                       ["/tmp/sesame-home/.codex/AGENTS.md",
-                        "/tmp/sesame-home/.claude/CLAUDE.md",
-                        "/tmp/sesame-project/AGENTS.md"])
+    }
+
+    func testGlobalTargetsFilterInstalledDirsWithInjectedProbe() {
+        let home = URL(fileURLWithPath: "/tmp/sesame-home")
+        let known = Set(["/tmp/sesame-home/.codex"])
+
+        XCTAssertEqual(Agents.globalTargets(home: home,
+                                            fileExists: { known.contains($0) }).map(\.path),
+                       ["/tmp/sesame-home/.codex/AGENTS.md"])
+    }
+
+    func testProjectTargetFallsBackToCurrentDirectoryWithoutGit() throws {
+        let home = try tempDir()
+        let cwd = try tempDir()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: cwd)
+        }
+
+        XCTAssertEqual(Agents.targets(scope: .project,
+                                      home: home,
+                                      cwd: cwd,
+                                      fileExists: { _ in false }).map(\.path),
+                       [cwd.appendingPathComponent("AGENTS.md").path])
+    }
+
+    func testAllTargetsCombineInstalledGlobalAndProject() throws {
+        let home = try tempDir()
+        let cwd = try tempDir()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: cwd)
+        }
+        let known = Set([home.appendingPathComponent(".codex").path])
+
+        XCTAssertEqual(Agents.targets(scope: .all,
+                                      home: home,
+                                      cwd: cwd,
+                                      fileExists: { known.contains($0) }).map(\.path),
+                       [home.appendingPathComponent(".codex/AGENTS.md").path,
+                        cwd.appendingPathComponent("AGENTS.md").path])
+    }
+
+    func testDefaultGlobalTargetsSkipAbsentAgentDirsWithInjectedProbe() {
+        let home = URL(fileURLWithPath: "/tmp/sesame-home")
+
+        XCTAssertTrue(Agents.globalTargets(home: home, fileExists: { _ in false }).isEmpty)
+    }
+
+    func testProjectTargetUsesRepoRootFromNestedDirectory() throws {
+        let home = try tempDir()
+        let repo = try tempDir()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repo)
+        }
+        let nested = repo.appendingPathComponent("Sources/App")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let known = Set([repo.appendingPathComponent(".git").path])
+
+        XCTAssertEqual(Agents.targets(scope: .project,
+                                      home: home,
+                                      cwd: nested,
+                                      fileExists: { known.contains($0) }).map(\.path),
+                       [repo.appendingPathComponent("AGENTS.md").path])
     }
 }

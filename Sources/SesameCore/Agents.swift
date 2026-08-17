@@ -16,22 +16,50 @@ public enum Agents {
         public let present: Bool
     }
 
-    public static func globalTargets(home: URL) -> [URL] {
-        [
+    public static func globalTargets(home: URL,
+                                     installedOnly: Bool = true,
+                                     fileExists: ((String) -> Bool)? = nil) -> [URL] {
+        let targets = [
             home.appendingPathComponent(".codex/AGENTS.md"),
             home.appendingPathComponent(".claude/CLAUDE.md")
         ]
+        guard installedOnly else { return targets }
+        let fm = FileManager.default
+        let exists = fileExists ?? { fm.fileExists(atPath: $0) }
+        return targets.filter { url in
+            exists(url.path) || exists(url.deletingLastPathComponent().path)
+        }
     }
 
-    public static func targets(scope: TargetScope, home: URL, cwd: URL) -> [URL] {
-        let project = [cwd.appendingPathComponent("AGENTS.md")]
+    public static func targets(scope: TargetScope,
+                               home: URL,
+                               cwd: URL,
+                               fileExists: ((String) -> Bool)? = nil) -> [URL] {
+        let project = [repoRoot(startingAt: cwd, fileExists: fileExists).appendingPathComponent("AGENTS.md")]
         switch scope {
         case .global:
-            return globalTargets(home: home)
+            return globalTargets(home: home, fileExists: fileExists)
         case .project:
             return project
         case .all:
-            return globalTargets(home: home) + project
+            return globalTargets(home: home, fileExists: fileExists) + project
+        }
+    }
+
+    public static func repoRoot(startingAt cwd: URL,
+                                fileExists: ((String) -> Bool)? = nil) -> URL {
+        let fm = FileManager.default
+        let exists = fileExists ?? { fm.fileExists(atPath: $0) }
+        let originalPath = cwd.standardizedFileURL.path
+        var path = originalPath
+        while true {
+            let marker = (path as NSString).appendingPathComponent(".git")
+            if exists(marker) { return URL(fileURLWithPath: path) }
+            let parent = (path as NSString).deletingLastPathComponent
+            if path == "/" || parent.isEmpty || parent == path {
+                return URL(fileURLWithPath: originalPath)
+            }
+            path = parent
         }
     }
 
