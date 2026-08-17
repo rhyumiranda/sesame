@@ -18,11 +18,6 @@ import SesameCore
 
 private let kService = "dev.sesame"
 
-// Single source of truth for the CLI version. release-please bumps the literal on
-// the marker line at each release — keep the `x-release-please-version` marker
-// comment on the SAME line as the version number, or the generic updater skips it.
-let sesameVersion = "0.7.1" // x-release-please-version
-
 func makeLog() -> AccessLog { AccessLog() }
 
 /// The advisory login-Keychain store the CLI can always reach on its own — the
@@ -621,4 +616,5 @@ struct Import: ParsableCommand {
     }
 }
 
+Telemetry.installCLIExitHook(version: sesameVersion)
 Sesame.main()

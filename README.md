@@ -62,6 +62,18 @@ sesame run OPENAI_API_KEY -- python train.py   # tap → OPENAI_API_KEY injected
 sesame get OPENAI_API_KEY                       # tap → prints the bare value on stdout
 ```
 
+## Private telemetry
+
+Sesame can send best-effort private Umami telemetry when a website ID is configured:
+
+```sh
+export SESAME_UMAMI_WEBSITE_ID=<umami-website-id>
+export SESAME_UMAMI_HOST=https://telemetry-umami.vercel.app
+export SESAME_TELEMETRY=0                       # opt out
+```
+
+The CLI records only the top-level command, result, version, and duration. It never sends secret names, secret values, raw args, prompts, paths, or source text.
+
 ## Wire agent secret lookup rules
 
 `sesame agents` adds a managed instruction block to Codex/Claude files so agents
