@@ -28,44 +28,40 @@ macOS on Apple Silicon.
 
 ```sh
 sesame add OPENAI_API_KEY   # 1. store a secret (paste the value; it's read from stdin)
-sesame init                 # 2. in your project, list the secret NAMES it needs
-sesame setup                # 3. turn on auto-injection once (puts the shims on your PATH)
+sesame open                 # 2. turn on tap-only mode + shims for the tools it knows
+sesame setup                # 3. put the shims on your PATH (once)
 ```
 
-Then run your agent or commands **normally** — no wrapping, no prefixes. When something needs a secret, you get **one Touch ID tap** and it's injected. That's it.
+That's the whole setup — **no allowlist file to write.** Now run your agent or
+commands **normally** (no wrapping, no prefixes). When something needs a secret,
+Sesame shows you exactly what it's about to release and takes **one Touch ID
+tap** — then injects it. Your thumb is the only gate.
 
 ## Example
 
 ```sh
 cd your-project
-sesame init          # add NPM_TOKEN to the .sesame file
-npm publish          # → one Touch ID tap → NPM_TOKEN is injected → it works
+npm publish          # → "releasing 1 secret: NPM_TOKEN" → one Touch ID tap → it works
+gh pr create         # → GH_TOKEN released on a tap → it works
 ```
 
-Launch your agent the same way (just `claude`, or `canopy start`). You don't wrap or prefix anything.
+Launch your agent the same way (just `claude`, or `canopy start`) — you don't
+wrap or prefix anything. Any tool Sesame shims picks up the key it needs on a tap.
 
-## Good to know
-
-- **Your agent never sees Sesame.** The secret goes into the program's environment, not the chat.
-- **One fingerprint per secret, only when it's actually used.** Every request is logged.
-- **Background & headless agents work too.** A request from a tool that isn't the front app brings Sesame forward, shows an **Allow / Deny** prompt naming who's asking and for which key, then takes your tap. Deny releases nothing.
-- **Free, local, no account.** The gate is a courtesy gate today; a hardware-locked (Secure-Enclave) tier and a menu-bar app are optional extras you can build from source.
-- **Already-running or GUI-launched?** The shims won't be on its PATH, so use the fallback: `sesame exec -- <cmd>`.
-
-## Open mode — thumb is the only action
-
-By default Sesame is **allowlist** mode: a command only gets the secrets its
-`.sesame` `[commands]` rule maps, so you decide up front exactly what each tool
-can touch. Open mode drops that list — **your only action is the tap.**
+**No setup at all? Name the key inline.** `sesame run` reaches any stored secret
+behind a tap with zero config — no `sesame open`, no `.sesame`:
 
 ```sh
-sesame open          # switch to open mode + install shims for the known tools
-                     # ('sesame open --off' returns to the allowlist default)
+sesame run OPENAI_API_KEY -- python train.py   # tap → OPENAI_API_KEY injected → runs
+sesame get OPENAI_API_KEY                       # tap → prints the bare value on stdout
 ```
 
-In open mode a shimmed command needs **no `.sesame` and no per-command map**.
-When it runs, Sesame picks the secret(s) it needs, shows them in the Allow
-prompt, and **one Touch ID tap** releases and injects them:
+## How a key reaches a command
+
+**The tap is the only action.** After `sesame open`, a shimmed command needs no
+`.sesame` and no per-command map. When it runs, Sesame figures out which
+secret(s) it needs, shows them in the Allow prompt, and one Touch ID tap releases
+and injects them:
 
 - **Known tools** use a built-in provider map — `doctl → DIGITALOCEAN_ACCESS_TOKEN`,
   `aws → AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY`, `gh → GH_TOKEN`,
@@ -74,17 +70,45 @@ prompt, and **one Touch ID tap** releases and injects them:
   `gcloud → GOOGLE_APPLICATION_CREDENTIALS`, and more. Only names you've actually
   stored are released — an absent one is skipped, never an error.
 - **A tool Sesame doesn't know** gets the vault secret whose name mentions it
-  (e.g. `mytool → MYTOOL_TOKEN`); if nothing matches, open means the whole vault
-  is a candidate for that command — the Allow prompt lists **every** name so you
-  can Deny.
-- **Custom tool?** `sesame shim install --commands <tool>` adds a shim; open mode
-  resolves it at run time.
+  (e.g. `mytool → MYTOOL_TOKEN`); if nothing matches, the whole vault is a
+  candidate for that command — the Allow prompt lists **every** name so you can Deny.
+- **Custom tool?** `sesame shim install --commands <tool>` adds a shim; tap-only
+  mode resolves it at run time.
 
-Open mode **never dumps secrets silently**: before each tap it prints the count
-and names it's about to release, every release is logged, and denying releases
-nothing. The tradeoff you accept: the tap alone gates release — there's no
-pre-approved allowlist. It's a global, one-time choice (stored in the HOME
-config); everyone who hasn't run `sesame open` keeps the strict default.
+Sesame **never dumps secrets silently**: before each tap it prints the count and
+names it's about to release, every release is logged, and denying releases
+nothing. Tap-only mode is a global, one-time choice (stored in the HOME config);
+`sesame open --off` returns to the stricter allowlist model below.
+
+### Prefer to pre-approve? Use the `.sesame` allowlist (opt-in)
+
+If you'd rather decide up front exactly which keys each tool can touch, skip
+`sesame open` and use an **allowlist** — the built-in default. Scaffold one with
+`sesame init`, then list the secret NAMES the project uses (and, optionally, map
+a command to just the secrets it needs):
+
+```
+# .sesame — names only, safe to commit
+NPM_TOKEN
+GH_TOKEN
+
+[commands]
+npm publish: NPM_TOKEN
+gh: GH_TOKEN
+```
+
+In allowlist mode a shimmed command gets **only** the secrets its `[commands]`
+rule maps; a command with no rule runs unchanged (no prompt). To launch a whole
+agent/shell with every declared secret preloaded in one step, use
+`sesame exec -- <cmd>`.
+
+## Good to know
+
+- **Your agent never sees Sesame.** The secret goes into the program's environment, not the chat.
+- **One fingerprint per secret, only when it's actually used.** Every request is logged.
+- **Background & headless agents work too.** A request from a tool that isn't the front app brings Sesame forward, shows an **Allow / Deny** prompt naming who's asking and for which key, then takes your tap. Deny releases nothing.
+- **Free, local, no account.** The gate is a courtesy gate today; a hardware-locked (Secure-Enclave) tier and a menu-bar app are optional extras you can build from source.
+- **Shims not on a program's PATH** (already-running or GUI-launched)? Use the config-free fallback: `sesame run <NAME> -- <cmd>`.
 
 ## Enable Touch ID (Developer ID build)
 
