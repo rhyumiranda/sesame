@@ -384,6 +384,9 @@ private struct SettingsPane: View {
             Section("Startup") {
                 LoginItemSection()
             }
+            Section("Tap-only injection") {
+                TapOnlySection()
+            }
             Section("Storage") {
                 LabeledContent("Backend", value: backendLabel)
                 LabeledContent("Agent") {

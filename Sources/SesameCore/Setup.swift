@@ -45,4 +45,36 @@ public enum Setup {
         try updated.write(to: url, atomically: true, encoding: .utf8)
         return true
     }
+
+    /// The exact reverse of `ensurePathLine`: drop any line that IS the PATH line
+    /// or the marker comment (trimmed match), collapsing the blank line the append
+    /// left behind. Leaves every OTHER line untouched, so a hand-edited rc keeps
+    /// its content. Absent file → nothing to do. Returns true iff it removed
+    /// anything. Used by the app's reversible "turn off tap-only" path.
+    @discardableResult
+    public static func removePathLine(in url: URL) throws -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return false }
+        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+
+        var kept: [String] = []
+        var removedAny = false
+        for line in existing.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == pathLine || trimmed == marker {
+                removedAny = true
+                continue
+            }
+            kept.append(line)
+        }
+        if !removedAny { return false }
+
+        // Collapse any 3+ run of newlines our removed block left behind.
+        var text = kept.joined(separator: "\n")
+        while text.contains("\n\n\n") {
+            text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        return true
+    }
 }
