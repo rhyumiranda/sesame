@@ -94,6 +94,33 @@ struct FakePeerVerifier: PeerVerifier {
     func identify(fd: Int32) throws -> PeerIdentity { identity }
 }
 
+/// Spy store that COUNTS `copyValue` calls, so a test can prove the app-injected
+/// authorize hook short-circuits BEFORE any release when the user denies.
+final class CountingStore: StorageBackend, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String: Data] = [:]
+    private(set) var copyValueCalls = 0
+
+    func exists(_ name: String) throws -> Bool { items[name] != nil }
+    @discardableResult
+    func add(name: String, value: Data) throws -> Bool {
+        if items[name] != nil { return false }
+        items[name] = value
+        return true
+    }
+    func copyValue(name: String) throws -> Data {
+        lock.lock(); copyValueCalls += 1; lock.unlock()
+        guard let v = items[name] else { throw SesameError.notFound(name) }
+        return v
+    }
+    func delete(name: String) throws { items[name] = nil }
+    func list() throws -> [SecretInfo] {
+        items.keys.sorted().map { SecretInfo(name: $0, createdAt: Time.iso(),
+                                             lastUsedAt: nil, lastUsedBy: nil) }
+    }
+    func recordUse(name: String, by requester: String?) {}
+}
+
 private let approvingAuth = FakeAuthenticator(approve: true)
 
 /// A short, unique socket path under /tmp — AF_UNIX `sun_path` is 104 bytes, and
@@ -262,6 +289,58 @@ final class AgentHandlingTests: XCTestCase {
         }
         XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
         XCTAssertEqual(provider.maxConcurrentDecrypts, 1, "the agent must serialize Touch ID")
+    }
+
+    // MARK: authorizeRelease hook (the app-injected background-approval seam)
+
+    func testAuthorizeHookRunsBeforeReleaseAndPasses() throws {
+        let store = CountingStore()
+        try store.add(name: "K", value: Data("v".utf8))
+        let peer = PeerIdentity(pid: 5, signature: "com.acme.agent", isSigned: true)
+        let server = makeServer(store: store, verifier: FakePeerVerifier(identity: peer))
+
+        var sawHookBeforeRelease = false
+        server.authorizeRelease = { name, requester, release in
+            XCTAssertEqual(name, "K")
+            XCTAssertEqual(requester, "com.acme.agent")
+            // The hook fires BEFORE any release has happened.
+            sawHookBeforeRelease = (store.copyValueCalls == 0)
+            return try release() // Allow → perform the release
+        }
+
+        let resp = server.handle(AgentRequest(op: "get", name: "K"), peer: peer)
+        XCTAssertTrue(resp.ok)
+        XCTAssertEqual(resp.value, "v")
+        XCTAssertTrue(sawHookBeforeRelease, "hook must run before copyValue")
+        XCTAssertEqual(store.copyValueCalls, 1, "release runs exactly once on approve")
+    }
+
+    func testDenyingHookReturnsDeniedWithoutReleasing() throws {
+        let store = CountingStore()
+        try store.add(name: "K", value: Data("v".utf8))
+        let peer = PeerIdentity(pid: 5, signature: "com.acme.agent", isSigned: true)
+        let server = makeServer(store: store, verifier: FakePeerVerifier(identity: peer))
+
+        // nil = user pressed Deny.
+        server.authorizeRelease = { _, _, _ in nil }
+
+        let resp = server.handle(AgentRequest(op: "get", name: "K"), peer: peer)
+        XCTAssertFalse(resp.ok)
+        XCTAssertEqual(resp.error, "denied")
+        XCTAssertEqual(store.copyValueCalls, 0, "deny must short-circuit before any release")
+    }
+
+    func testNilHookLeavesReleaseUnchanged() throws {
+        let store = CountingStore()
+        try store.add(name: "K", value: Data("v".utf8))
+        let peer = PeerIdentity(pid: 5, signature: "p", isSigned: true)
+        let server = makeServer(store: store, verifier: FakePeerVerifier(identity: peer))
+        // authorizeRelease left nil → today's behavior: release inline.
+
+        let resp = server.handle(AgentRequest(op: "get", name: "K"), peer: peer)
+        XCTAssertTrue(resp.ok)
+        XCTAssertEqual(resp.value, "v")
+        XCTAssertEqual(store.copyValueCalls, 1)
     }
 
     func testQueuedRequestTimesOut() throws {
