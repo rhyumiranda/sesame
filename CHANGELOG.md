@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/rhyumiranda/sesame/compare/v0.5.1...v0.6.0) (2026-08-17)
+
+
+### Features
+
+* **build:** enable Touch ID gate via Developer ID signing + team-prefixed keychain group ([#27](https://github.com/rhyumiranda/sesame/issues/27)) ([8345df8](https://github.com/rhyumiranda/sesame/commit/8345df805547c52feb3d62db23a05f324a14ec3e))
+
 ## [0.5.1](https://github.com/rhyumiranda/sesame/compare/v0.5.0...v0.5.1) (2026-08-17)
 
 
