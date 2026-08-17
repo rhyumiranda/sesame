@@ -31,10 +31,14 @@ public protocol EnclaveProvider: AnyObject {
 /// The real Secure-Enclave provider.
 ///
 /// COMPILES everywhere; only FUNCTIONS on a signed + entitled build with a
-/// Secure Enclave. Per decision #3 the SE key is a keychain token item under the
-/// app's OWN default access group — a signed app reaches its own items with NO
-/// `keychain-access-groups` entitlement (that entitlement is only for cross-app
-/// sharing). Per decision #1 the access control is `.privateKeyUsage` +
+/// Secure Enclave. The SE key is a keychain token item, and creating it needs a
+/// TEAM-PREFIXED `keychain-access-groups` entitlement carried by a Developer-ID
+/// (or provisioned) signature — a reproduced -34018 errSecMissingEntitlement on
+/// `SecKeyCreateRandomKey` disproved the earlier belief that a signed app reaches
+/// its own SE key with no group. See `Sesame.entitlements` (the group is
+/// `$(TEAM_ID).dev.sesame.app`, substituted at build time by scripts/build-app.sh)
+/// and README "Enable Touch ID". Per decision #1 the access control is
+/// `.privateKeyUsage` +
 /// `.biometryAny` (durability: survives fingerprint enrollment changes, unlike
 /// `.biometryCurrentSet` which would silently destroy the key — and thus every
 /// secret — on any add/remove of a fingerprint).

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  Sesame agent entitlements — MINIMAL by design (pinned decision #4).
+	  Sesame agent entitlements.
 
 	  Hardened Runtime is applied via `codesign -o runtime` (a signing flag, not
 	  an entitlement) — required for notarization and to run SE crypto under a
@@ -13,14 +13,27 @@
 	  Support and opens a Unix-domain socket in the login session — both of which
 	  the App Sandbox would block. So the sandbox entitlement is explicitly false.
 
-	  NO keychain-access-groups: the Secure-Enclave key is a keychain token item
-	  under the app's OWN default access group (decision #3); a signed app reaches
-	  its own items with no special entitlement — that key is only for CROSS-app
-	  keychain sharing (and is a paid/restricted entitlement). Adding it would be
-	  wrong here. If a future SE operation is rejected for a missing entitlement,
-	  document the exact key and add ONLY that one.
+	  keychain-access-groups IS required for the biometric/Secure-Enclave gate.
+	  Earlier belief (that a signed app reaches its OWN SE key with no group) is
+	  DISPROVEN by a reproduced -34018 errSecMissingEntitlement on BOTH the
+	  Secure-Enclave key create (SecKeyCreateRandomKey) and a biometric
+	  SecAccessControl on a plain keychain item. macOS only honors the
+	  keychain/biometry entitlement when the app is signed by an identity that
+	  authorizes a TEAM-PREFIXED keychain access group. So the SE/Touch-ID gate
+	  REQUIRES this group AND a Developer-ID (or provisioned) signature — an
+	  ad-hoc / bare Apple-Development build fails -34018 on add and error 163 on
+	  launch when this group is present.
+
+	  $(TEAM_ID) is a PLACEHOLDER — it is NOT hardcoded. scripts/build-app.sh
+	  derives the team id from the Developer ID signing identity at build time and
+	  substitutes it into a temp copy of this file before `codesign`. The literal
+	  `$(TEAM_ID)` string must never be signed as-is.
 	-->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(TEAM_ID).dev.sesame.app</string>
+	</array>
 </dict>
 </plist>
