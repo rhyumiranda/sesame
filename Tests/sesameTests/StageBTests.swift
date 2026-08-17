@@ -343,6 +343,27 @@ final class AgentHandlingTests: XCTestCase {
         XCTAssertEqual(store.copyValueCalls, 1)
     }
 
+    func testHookReleaseThrowIsMappedLikeTheNonHookPath() throws {
+        let store = CountingStore() // "K" is never added → release throws notFound
+        let peer = PeerIdentity(pid: 5, signature: "com.acme.agent", isSigned: true)
+        let log = tempLog()
+        let server = AgentServer(socketPath: tempSocketPath(), store: store,
+                                 log: log, verifier: FakePeerVerifier(identity: peer),
+                                 authTimeout: 60)
+        // Allow at the prompt, but the Touch ID-gated release itself fails — the
+        // hook rethrows, and handleGet must map/log it exactly like no-hook.
+        server.authorizeRelease = { _, _, release in try release() }
+
+        let resp = server.handle(AgentRequest(op: "get", name: "K"), peer: peer)
+        XCTAssertFalse(resp.ok)
+        XCTAssertEqual(resp.error, "notfound:K", "rethrown error maps to the normal wire token")
+
+        // And it is logged with the normal result, not swallowed.
+        let last = log.read().last
+        XCTAssertEqual(last?["result"] as? String, "notfound")
+        XCTAssertEqual(last?["op"] as? String, "get")
+    }
+
     func testQueuedRequestTimesOut() throws {
         let dir = tempVaultDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let provider = FakeEnclaveProvider()
