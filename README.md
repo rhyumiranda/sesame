@@ -52,6 +52,40 @@ Launch your agent the same way (just `claude`, or `canopy start`). You don't wra
 - **Free, local, no account.** The gate is a courtesy gate today; a hardware-locked (Secure-Enclave) tier and a menu-bar app are optional extras you can build from source.
 - **Already-running or GUI-launched?** The shims won't be on its PATH, so use the fallback: `sesame exec -- <cmd>`.
 
+## Open mode — thumb is the only action
+
+By default Sesame is **allowlist** mode: a command only gets the secrets its
+`.sesame` `[commands]` rule maps, so you decide up front exactly what each tool
+can touch. Open mode drops that list — **your only action is the tap.**
+
+```sh
+sesame open          # switch to open mode + install shims for the known tools
+                     # ('sesame open --off' returns to the allowlist default)
+```
+
+In open mode a shimmed command needs **no `.sesame` and no per-command map**.
+When it runs, Sesame picks the secret(s) it needs, shows them in the Allow
+prompt, and **one Touch ID tap** releases and injects them:
+
+- **Known tools** use a built-in provider map — `doctl → DIGITALOCEAN_ACCESS_TOKEN`,
+  `aws → AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY`, `gh → GH_TOKEN`,
+  `heroku → HEROKU_API_KEY`, `stripe → STRIPE_API_KEY`, `vercel → VERCEL_TOKEN`,
+  `netlify → NETLIFY_AUTH_TOKEN`, `npm → NPM_TOKEN`,
+  `gcloud → GOOGLE_APPLICATION_CREDENTIALS`, and more. Only names you've actually
+  stored are released — an absent one is skipped, never an error.
+- **A tool Sesame doesn't know** gets the vault secret whose name mentions it
+  (e.g. `mytool → MYTOOL_TOKEN`); if nothing matches, open means the whole vault
+  is a candidate for that command — the Allow prompt lists **every** name so you
+  can Deny.
+- **Custom tool?** `sesame shim install --commands <tool>` adds a shim; open mode
+  resolves it at run time.
+
+Open mode **never dumps secrets silently**: before each tap it prints the count
+and names it's about to release, every release is logged, and denying releases
+nothing. The tradeoff you accept: the tap alone gates release — there's no
+pre-approved allowlist. It's a global, one-time choice (stored in the HOME
+config); everyone who hasn't run `sesame open` keeps the strict default.
+
 ## Enable Touch ID (Developer ID build)
 
 Out of the box Sesame runs on the **advisory** tier (a login-password courtesy
