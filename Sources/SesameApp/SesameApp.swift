@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SesameCore
 
 /// Sesame's Milestone 2 windowed app.
 ///
@@ -56,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
 
         agent.start()
+        Telemetry.trackAppLaunch(version: sesameVersion)
 
         // Bring the window to the front so the user immediately SEES it.
         NSApp.activate(ignoringOtherApps: true)
